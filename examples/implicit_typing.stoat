@@ -1,0 +1,10 @@
+let mut from: i64 = 0;
+let mut to = 0i64;
+
+fun infer_in_return() -> i64 {
+	return 1;
+}
+
+let mut infer_from_func = infer_in_return();
+
+print("from: {}, to: {}, infer_from_func: {}", from, to, infer_from_func);

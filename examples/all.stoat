@@ -1,0 +1,47 @@
+let a = 5i32;
+let b = 4i32;
+let mut c = a + b;
+
+c -= 2i32;
+c += 2i32;
+
+if a > b {
+		c = a - b;
+} else {
+		c = b - a;
+}
+
+let mut dog = true;
+let mut cat = false;
+
+if dog {
+	print("woof");
+	dog = false;
+	cat = true;
+}
+
+if !dog && cat {
+	print("meow");
+	dog = true;
+}
+
+if dog && cat {
+	print("meof");
+	cat = false;
+	dog = false;
+}
+
+let tuple: (i32, i32) = (1i32, 21i32);
+print("tup: {}", tuple);
+
+if !(dog || cat) {
+	print("ding");
+}
+
+assert(!(dog || cat) == dog !| cat, "nor ain't noring :(");
+
+let mut slice = [| 1i32, 2i32, 3i32, 4i32, 5i32 |];
+print("slice: {}", slice);
+slice.push(6i32);
+slice.push(7i32);
+print("after 2 pushes: {}", slice);

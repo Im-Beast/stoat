@@ -1,0 +1,50 @@
+import builtins::{
+	Channel,
+	Storoutine,
+};
+
+fun something_expensive(input: i32) -> i32 {
+	// ...
+	return 5;
+}
+
+let channel: Channel<i32> = Channel::new();
+
+for i in 0..10 {
+	stoat {
+		something_expensive(i);
+		channel.send(i);
+	}
+}
+
+for i in 0..10 {
+	channel.recv();
+}
+
+print("Done!");
+
+// OR
+fun something_expensive(input: i32) -> i32 {
+	let storoutine = stoat {
+		// ...
+		return 5;
+	}
+
+	return storoutine.final();
+}
+
+let storoutine: Storoutine<i32> = stoat {
+	for i in 0..10 {
+	    yield something_expensive(i);
+	}
+
+	return -1;
+};
+
+for i in storoutine {
+	if i == -1 {
+		break;
+	}
+	
+	print(i);
+}

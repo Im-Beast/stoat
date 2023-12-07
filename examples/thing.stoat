@@ -1,0 +1,6 @@
+let mut first = [|1i32,2i32,3i32|];
+let mut second = first;
+second.push(4i32);
+
+print("First: {}", first);
+print("Second: {}", second);

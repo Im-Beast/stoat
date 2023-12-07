@@ -1,0 +1,95 @@
+// FIXME: Catching lack of semicolons is still lacking
+
+{
+  print("tuply tuples");
+
+  let tuple = (5i32, "Hello", "World");
+
+  let (a, b, c) = tuple;
+  assert(format("{} {} {}", a, b, c) == "5 Hello World", "all elements of tuple");
+
+  let (a, .., c) = tuple;
+  assert(format("{} {}", a, c) == "5 World", "first and last element");
+
+  let (.., c) = tuple;
+  assert(format("{}", c) == "World", "last element");
+
+  let (a, ..) = tuple;
+  assert(format("{}", a) == "5", "first element");
+
+  // bigger tuple
+  let tuple = (1i32, 2i32, 7i32, 5i32, 8i32, 12i32);
+  let (a, b, c) = tuple;
+  assert(format("{} {} {}", a, b, c) == "1 2 7", "first 3 elements");
+
+  let (a, b, .., c, d) = tuple;
+  assert(format("{} {} {} {}", a, b, c, d) == "1 2 8 12", "first 2 last 2");
+
+  let (a, .., d) = tuple;
+  assert(format("{} {}", a, d) == "1 12", "first last");
+
+  let (_, a, .., d, _) = tuple;
+  assert(format("{} {}", a, d) == "2 8", "second and second last");
+
+
+  // empty tuples
+  let (..) = tuple;
+  let (_, b, ..) = tuple;
+  let (.., _) = tuple;
+  let (_, .., _) = tuple;
+  let (_, ..) = tuple;
+}
+
+{
+  print("arrogant arrays");
+
+  let [a,b,c] = [1i32, 2i32, 3i32];
+  assert(format("{} {} {}", a, b, c) == "1 2 3", "all elements of array");
+
+  // bigger array
+  let arr = [1i32, 2i32, 7i32, 5i32, 8i32, 12i32];
+
+  let [a, b, c] = arr;
+  assert(format("{} {} {}", a, b, c) == "1 2 7", "first 3 elements");
+
+  let [a, b, .., c, d] = arr;
+  assert(format("{} {} {} {}", a, b, c, d) == "1 2 8 12", "first 2 last 2");
+
+  let [a, .., d] = arr;
+  assert(format("{} {}", a, d) == "1 12", "first last");
+
+  let [_, a, .., d, _] = arr;
+  assert(format("{} {}", a, d) == "2 8", "second and second last");
+
+  // empty arrays
+  let [..] = arr;
+  let [_] = arr;
+  let [_, ..] = arr;
+  let [.., _] = arr;
+  let [_, .., _] = arr;
+}
+
+{
+  print("Slicy slices");
+
+  let mut slice = [|"h","e","l","l"|];
+  print("before: {}", slice);
+  slice.push("o");
+  slice.push("1");
+  slice.push("2");
+  print("after: {}", slice);
+}
+
+// {
+//   print("tuply arrays");
+
+//   let arr = [
+//     ((1i32, "H"), "ello"),
+//     ((2i32, "W"), "orld"),
+//     ((3i32, ":"), ")"),
+//   ];
+
+//   for ((a,b), c) in arr {
+//     print("{} {}{}", a, b, c);
+//   }
+// }

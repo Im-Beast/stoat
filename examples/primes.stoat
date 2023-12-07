@@ -1,0 +1,28 @@
+fun isPrime(number: i32) -> i32 {
+    let mut start: i32 = 2;
+    let limit: i32 = number.sqrt();
+    while start <= limit {
+        if number % start < 1i32 {
+					return false;
+				}
+
+				start += 1i32;
+    }
+		
+    return number > 1i32;
+}
+
+fun primes(n: i32) -> {
+		// FIXME: [||] crashes
+		let mut result: i32[] = [| |];
+		let mut i: i32 = 0;
+		while (result.length < n) {
+				if (isPrime(i)) {
+						result.push(i);
+				}
+				i += 1i32;
+		}
+		return result;
+}
+
+print(primes(500000i32));
