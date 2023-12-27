@@ -24,6 +24,60 @@ impl<'a, 'b> Iterator for InclusiveRangeValueIntoIter<'a, 'b> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        todo!("inclusive range iterator")
+        match self.1 {
+            Value::Integer32(ref mut value) => {
+                let Value::Integer32(to) = self.2 else {
+                    unreachable!()
+                };
+
+                if *value <= *to {
+                    let result = Cow::Owned(Value::Integer32(*value));
+                    *value += 1;
+                    Some(result)
+                } else {
+                    None
+                }
+            }
+            Value::Integer64(ref mut value) => {
+                let Value::Integer64(to) = self.2 else {
+                    unreachable!()
+                };
+
+                if *value <= *to {
+                    let result = Cow::Owned(Value::Integer64(*value));
+                    *value += 1;
+                    Some(result)
+                } else {
+                    None
+                }
+            }
+            Value::Float32(ref mut value) => {
+                let Value::Float32(to) = self.2 else {
+                    unreachable!()
+                };
+
+                if *value <= *to {
+                    let result = Cow::Owned(Value::Float32(*value));
+                    *value += 1.0;
+                    Some(result)
+                } else {
+                    None
+                }
+            }
+            Value::Float64(ref mut value) => {
+                let Value::Float64(to) = self.2 else {
+                    unreachable!()
+                };
+
+                if *value <= *to {
+                    let result = Cow::Owned(Value::Float64(*value));
+                    *value += 1.0;
+                    Some(result)
+                } else {
+                    None
+                }
+            }
+            _ => unimplemented!(),
+        }
     }
 }
