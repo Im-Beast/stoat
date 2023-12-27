@@ -94,10 +94,20 @@ pub enum Value<'a> {
 }
 
 impl<'a> Value<'a> {
+    pub fn as_direct_self(self) -> Value<'a> {
+        match self {
+            Value::Reference(value) => value.as_ref().clone().as_direct_self(),
+            Value::MutableReference(value) => value.borrow().clone().as_direct_self(),
+            value => value,
+        }
+    }
+
     pub fn as_direct_ref(&self) -> &Value<'a> {
         match self {
-            Value::Reference(value) => value,
-            Value::MutableReference(value) => unsafe { &*value.as_ref().as_ptr() },
+            Value::Reference(value) => value.as_direct_ref(),
+            Value::MutableReference(value) => {
+                (unsafe { &*value.as_ref().as_ptr() }).as_direct_ref()
+            }
             value => value,
         }
     }

@@ -215,12 +215,12 @@ impl<'a> Interpreter<'a> {
             Expression::ExclusiveRange(from, to) => {
                 let from = self.evaluate_expression(from)?;
                 let to = self.evaluate_expression(to)?;
-                self.evaluate_exclusive_range(from, to)?
+                self.evaluate_exclusive_range(from.as_direct_self(), to.as_direct_self())?
             }
             Expression::InclusiveRange(from, to) => {
                 let from = self.evaluate_expression(from)?;
                 let to = self.evaluate_expression(to)?;
-                self.evaluate_inclusive_range(from, to)?
+                self.evaluate_inclusive_range(from.as_direct_self(), to.as_direct_self())?
             }
 
             Expression::MathOperation(math_operation) => {
@@ -234,6 +234,7 @@ impl<'a> Interpreter<'a> {
             }
             Expression::Negate(expression) => {
                 let value = self.evaluate_expression(expression)?;
+                let value = value.as_direct_ref();
                 extract_type_value!(value, Boolean);
                 Value::Boolean(!value)
             }
@@ -260,7 +261,7 @@ impl<'a> Interpreter<'a> {
             }
             Expression::VariableAssignment(name, value) => {
                 let value = self.evaluate_expression(value)?;
-                self.evaluate_assignment(&value, name)?
+                self.evaluate_assignment(value.as_direct_ref(), name)?
             }
 
             Expression::AccessProperty(value, property) => {
@@ -766,8 +767,13 @@ impl<'a> Interpreter<'a> {
         Ok(())
     }
 
-    fn evaluate_inclusive_range(&mut self, from: Value<'a>, to: Value<'a>) -> Result<Value<'a>> {
+    fn evaluate_inclusive_range<'b>(
+        &mut self,
+        from: Value<'a>,
+        to: Value<'a>,
+    ) -> Result<Value<'a>> {
         from.assert_type_of(&(&to).into())?;
+
         Ok(Value::InclusiveRange(InclusiveRangeValue(
             from.into(),
             to.into(),
@@ -776,6 +782,7 @@ impl<'a> Interpreter<'a> {
 
     fn evaluate_exclusive_range(&mut self, from: Value<'a>, to: Value<'a>) -> Result<Value<'a>> {
         from.assert_type_of(&(&to).into())?;
+
         Ok(Value::ExclusiveRange(ExclusiveRangeValue(
             from.into(),
             to.into(),
