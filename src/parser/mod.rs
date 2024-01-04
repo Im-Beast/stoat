@@ -322,11 +322,15 @@ impl<'a> Parser<'a> {
                 | Token::Integer64(_)
                 | Token::Bool(_)
                 | Token::String(_)
-                | Token::LeftBracket => ExpressionSpan::new(
-                    self.parse_value_expression()?,
-                    iteration_cursor,
-                    self.cursor,
-                ),
+                | Token::LeftBracket => {
+                    let value = ExpressionSpan::new(
+                        self.parse_value_expression()?,
+                        iteration_cursor,
+                        self.cursor,
+                    );
+                    self.cursor += 1;
+                    value
+                }
 
                 Token::Access => {
                     let item = pop_expression_stack!(self, expression_stack).expression;
@@ -504,6 +508,7 @@ impl<'a> Parser<'a> {
                             expected_end,
                         )?;
 
+                        panic!("");
                         bail!(errors::UnexpectedToken {
                             dbg_line: at_dbg_line!(),
                             actual: format!("{:?}", token),
@@ -518,6 +523,7 @@ impl<'a> Parser<'a> {
                 },
             };
 
+            println!("current: {current:?}");
             // just create a stack, take when it needs to consume an expression
             // and return just pops last element from the stack
             expression_stack.push(current);
@@ -795,6 +801,7 @@ impl<'a> Parser<'a> {
             self.expect_current(&Token::Assign)?;
             self.cursor += 1;
 
+            println!("{:?}", self.current()?);
             let value = self.parse_expression(&[&Token::Semicolon])?;
 
             (value, Type::Unknown)

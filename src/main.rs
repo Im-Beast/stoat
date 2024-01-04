@@ -4,10 +4,12 @@ mod cli;
 
 mod interpreter;
 mod lexer;
+mod new_lexer;
 mod parser;
 
 use std::process::ExitCode;
 
-fn main() -> ExitCode {
-    cli::parse_cli()
+fn main() {
+    new_lexer::lex();
+    // cli::parse_cli()
 }

@@ -1,518 +1,800 @@
-mod matchers;
+mod errors;
 
-use crate::shared::types::Type;
-use matchers::*;
+use self::errors::{LexerError, UnexpectedCharacter, UnexpectedEOF, UnsupportedNumberSuffix};
 
-use std::fmt::Debug;
-use std::ops::Range;
-use std::str;
-
-use miette::{bail, miette, LabeledSpan, Report, Result, SourceSpan};
-
-const EMPTY_STR: &str = "";
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum Token<'a> {
-    Identifier(&'a str),
-
-    UnknownInteger(&'a str),
-    Integer32(i32),
-    Integer64(i64),
-    UnknownFloat(&'a str),
-    Float32(f32),
-    Float64(f64),
-    Bool(bool),
-    String(&'a str),
-
-    Enum,
-    Struct,
-
-    // Brackets
-    LeftCurly,    // {
-    RightCurly,   // }
-    LeftParen,    // (
-    RightParen,   // )
-    LeftBracket,  // [
-    RightBracket, // ]
-
-    // Error handling operators
-    Bang,         // !
-    QuestionMark, // ?
-    Pipe,         // |
-
-    // Manipulation operators
-    Add,      // +
-    Subtract, // -
-    Divide,   // /
-    Multiply, // *
-    Modulo,   // %
-
-    // Assignment operators
-    Assign,         // =
-    AddAssign,      // +=
-    SubtractAssign, // -=
-    DivideAssign,   // /=
-    MutliplyAssign, // *=
-    ModuloAssign,   // %=
-    // Order comparison operators
-    GreaterThan,        // >
-    GreaterThanOrEqual, // >=
-    LessThan,           // <
-    LessThanOrEqual,    // <=
-    // Logical comparison operators
-    And,  // &&
-    Nand, // !&
-    Or,   // ||
-    Nor,  // !|
-    // comparison operators
-    Equal,    // ==
-    NotEqual, // !=
-
-    // Variables
-    VariableDeclaration, // let <name> <mut> <type>
-    Mutable,
-    Type(&'a str),
-
-    // Functions
-    Function,                // fun
-    ReturnType(Type),        // ->
-    DubiousReturnType(Type), // ?>
-
-    Return,
-    Bail,
-
-    // Object Access
-    Access, // .
-
-    // Statements
-    If,
-    Else,
-    Match,
-
-    // Loops
-    For,            // for i in x { ... }
-    While,          // while x { ... }
-    Loop,           // loop { ... }
-    In,             // for i in [1,2] { ... }
-    ExclusiveRange, // for i in 1..5 { ... }
-    InclusiveRange, // for i in 1..=5 { ... }
-    Break,
-    Continue,
-
-    // Separators
-    Semicolon, // ;
-    Comma,     // , Element separators (arrays, tuples, objects)
-    Colon,     // , Type separator
-
-    // Comments
-    LineComment(&'a str),
-
-    // Token used when something really bad happened
-    Unexpected,
+macro_rules! dbg_line {
+    () => {
+        format!("{}:{}", file!(), line!())
+    };
 }
 
-impl<'a> Token<'a> {
-    pub fn eq_type(&self, other: &Token) -> bool {
-        std::mem::discriminant(self) == std::mem::discriminant(other)
+pub fn lex() {
+    let code = include_str!("./example_code.st");
+    let lexer = Lexer::new(code);
+
+    let result = lexer.lex();
+
+    println!("{:?}", result.tokens);
+
+    if !result.errors.is_empty() {
+        for error in result.errors {
+            eprintln!("{:?}", error.into_err_report());
+        }
+        std::process::exit(1);
     }
 }
 
-#[derive(PartialEq)]
-pub struct TokenSpan<'a> {
-    pub token: Token<'a>,
-    pub from: usize,
-    pub to: usize,
+#[derive(Clone, Copy, Debug)]
+pub struct Span {
+    start: usize,
+    end: usize,
 }
 
-impl From<&TokenSpan<'_>> for SourceSpan {
-    fn from(span: &TokenSpan) -> Self {
-        (span.from..span.to).into()
-    }
-}
-
-impl<'a> TokenSpan<'a> {
-    pub fn new(from: usize, to: usize, token: Token<'a>) -> Self {
-        TokenSpan {
-            from,
-            // adding one because miette takes range instead of inclusive range
-            to: to + 1,
-            token,
+impl Into<Span> for (usize, usize) {
+    fn into(self) -> Span {
+        Span {
+            start: self.0,
+            end: self.1,
         }
     }
-
-    pub fn report<T: ToString, Y: ToString>(&self, code: T, message: Y) -> Report {
-        let token = &self.token;
-        miette!(
-            labels = vec![LabeledSpan::at(self.from..self.to, message.to_string())],
-            "{token:?}",
-        )
-        .with_source_code(code.to_string())
-    }
 }
 
-impl Debug for TokenSpan<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Ok(self.token.fmt(f)?)
-    }
+#[derive(Clone, Copy, Debug)]
+pub enum NumberPrefix {
+    None,        // (Decimal) default
+    Binary,      // 0b
+    Octal,       // 0o
+    Hexadecimal, // 0x
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum NumberSuffix {
+    None,
+
+    // Unsigned integers
+    U8,  // 69u8
+    U16, // 69u16
+    U32, // 69u32
+    U64, // 69u64
+
+    // Signed integers
+    I8,  // 69i8
+    I16, // 69i16
+    I32, // 69i32
+    I64, // 69i64
+
+    // Floating point numbers
+    F32, // 69f32
+    F64, // 69f64
+}
+
+#[derive(Clone, Debug)]
+pub enum Token {
+    Garbage(Option<String>, Span),
+
+    Identifier(String, Span),
+
+    // Comments
+    LineComment(String, Span),
+    BlockComment(String, Span),
+
+    // Punctuation
+    Semicolon(Span),
+    Colon(Span),
+    Comma(Span),
+    Dot(Span),
+
+    // Data types
+    Number(NumberPrefix, NumberSuffix, String, Span),
+    String(String, Span),
+    Char(char, Span),
+
+    // Brackets
+    LeftCurly(Span),
+    RightCurly(Span),
+    LeftSquare(Span),
+    RightSquare(Span),
+    LeftParen(Span),
+    RightParen(Span),
+
+    // Keywords
+    Let(Span),
+    Mut(Span),
+    Fun(Span),
+    Return(Span),
+    Bail(Span),
+    If(Span),
+    Else(Span),
+    Loop(Span),
+    While(Span),
+    For(Span),
+    In(Span),
+    Break(Span),
+    Continue(Span),
+    Match(Span),
+
+    // Math operators
+    Add(Span),
+    Subtract(Span),
+    Multiply(Span),
+    Divide(Span),
+    Modulo(Span),
+
+    // Logical operators
+    And(Span),
+    Nand(Span),
+    Or(Span),
+    Nor(Span),
+    Not(Span),
+
+    // Assignment operators
+    Assign(Span),
+    AddAssign(Span),
+    SubtractAssign(Span),
+    MultiplyAssign(Span),
+    DivideAssign(Span),
+    ModuloAssign(Span),
+
+    // Comparison operators
+    Equals(Span),             // ==
+    NotEquals(Span),          // !=
+    LessThan(Span),           // <
+    LessThanOrEqual(Span),    // <=
+    GreaterThan(Span),        // >
+    GreaterThanOrEqual(Span), // >=
+}
+
+#[derive(Debug, Clone)]
 pub struct Lexer<'a> {
+    code: &'a str,
+    chars: Box<[char]>,
     cursor: usize,
-    input: &'a [u8],
+    errors: Vec<LexerError>,
+}
+
+#[derive(Debug)]
+pub struct LexerResult {
+    pub tokens: Vec<Token>,
+    pub errors: Vec<LexerError>,
+}
+
+macro_rules! string_with_match_pattern {
+    ($lexer: expr, $pattern: pat) => {
+        string_with_match_pattern!($lexer, String::new(), $pattern)
+    };
+
+    ($lexer: expr, $string: expr, $pattern: pat) => {{
+        let mut string = $string;
+        loop {
+            match $lexer.peek() {
+                Some(ch @ $pattern) => {
+                    string.push(*ch);
+                    $lexer.cursor += 1;
+                }
+                _ => break,
+            }
+        }
+        string
+    }};
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(input: &'a str) -> Self {
+    pub fn new(code: &'a str) -> Self {
         Lexer {
+            code,
+            chars: code.chars().collect(),
             cursor: 0,
-            input: input.as_bytes(),
+            errors: vec![],
         }
     }
 
-    pub fn current(&self) -> u8 {
-        self.peek_next_n(0)
+    pub fn lex(mut self) -> LexerResult {
+        let mut tokens = vec![];
+
+        while let Some(token) = self.next() {
+            tokens.push(token);
+        }
+
+        LexerResult {
+            tokens: tokens,
+            errors: self.errors,
+        }
     }
 
-    pub fn peek_next(&self) -> u8 {
-        self.peek_next_n(1)
-    }
+    pub fn error(&mut self, error: LexerError) -> Token {
+        self.errors.push(error);
 
-    pub fn peek_next_n(&self, n: usize) -> u8 {
-        if self.cursor + n >= self.input.len() {
-            0
+        if self.cursor < self.chars.len() {
+            let start = self.cursor;
+            self.cursor = self.chars.len();
+            Token::Garbage(
+                Some(self.chars[start..].iter().collect()),
+                (start, self.cursor).into(),
+            )
         } else {
-            self.input[self.cursor + n]
+            Token::Garbage(None, (self.cursor, self.chars.len()).into())
         }
     }
 
-    pub fn skip_whitespace(&mut self) {
-        loop {
-            if self.current().is_ascii_whitespace() {
-                self.cursor += 1;
-            } else {
-                break;
+    pub fn peek(&self) -> Option<&char> {
+        self.chars.get(self.cursor)
+    }
+
+    pub fn peek_next(&self, n: usize) -> Option<&char> {
+        self.chars.get(self.cursor + n)
+    }
+
+    pub fn lex_ident_or_keyword(&mut self) -> Token {
+        let start = self.cursor;
+        let string = string_with_match_pattern!(self, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_');
+
+        let span: Span = (start, self.cursor).into();
+
+        match string.as_str() {
+            "let" => Token::Let(span),
+            "mut" => Token::Mut(span),
+            "fun" => Token::Fun(span),
+            "return" => Token::Return(span),
+            "bail" => Token::Bail(span),
+            "if" => Token::If(span),
+            "else" => Token::Else(span),
+            "loop" => Token::Loop(span),
+            "while" => Token::While(span),
+            "for" => Token::For(span),
+            "in" => Token::In(span),
+            "break" => Token::Break(span),
+            "continue" => Token::Continue(span),
+            "match" => Token::Match(span),
+            _ => Token::Identifier(string, span),
+        }
+    }
+
+    pub fn lex_number(&mut self) -> Token {
+        match self.peek_next(1) {
+            Some('b') => self.lex_binary_number(),      // Binary
+            Some('o') => self.lex_octal_number(),       // Octal
+            Some('x') => self.lex_hexadecimal_number(), // Hexadecimal
+            _ => self.lex_decimal_number(),
+        }
+    }
+
+    pub fn lex_decimal_number(&mut self) -> Token {
+        let start = self.cursor;
+        let string = string_with_match_pattern!(self, '0'..='9');
+
+        Token::Number(
+            NumberPrefix::None,
+            self.lex_number_suffix(),
+            string,
+            (start, self.cursor).into(),
+        )
+    }
+
+    pub fn lex_octal_number(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 2; // Skip 0o
+        let string = string_with_match_pattern!(self, '0'..='7');
+        Token::Number(
+            NumberPrefix::Octal,
+            self.lex_number_suffix(),
+            string,
+            (start, self.cursor).into(),
+        )
+    }
+
+    pub fn lex_hexadecimal_number(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 2; // Skip 0x
+        let string = string_with_match_pattern!(self, '0'..='9' | 'a'..='f' | 'A'..='F');
+        Token::Number(
+            NumberPrefix::Hexadecimal,
+            self.lex_number_suffix(),
+            string,
+            (start, self.cursor).into(),
+        )
+    }
+
+    pub fn lex_binary_number(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 2; // Skip 0b
+        let string = string_with_match_pattern!(self, '0' | '1');
+        Token::Number(
+            NumberPrefix::Binary,
+            self.lex_number_suffix(),
+            string,
+            (start, self.cursor).into(),
+        )
+    }
+
+    pub fn lex_number_suffix(&mut self) -> NumberSuffix {
+        let start = self.cursor;
+        let suffix = string_with_match_pattern!(self, 'u' | 'i' | 'f');
+
+        if suffix.is_empty() {
+            NumberSuffix::None
+        } else {
+            let suffix = string_with_match_pattern!(self, suffix, '1'..='9');
+            match suffix.as_str() {
+                "u8" => NumberSuffix::U8,
+                "u16" => NumberSuffix::U16,
+                "u32" => NumberSuffix::U32,
+                "u64" => NumberSuffix::U64,
+
+                "i8" => NumberSuffix::I8,
+                "i16" => NumberSuffix::I16,
+                "i32" => NumberSuffix::I32,
+                "i64" => NumberSuffix::I64,
+
+                "f32" => NumberSuffix::F32,
+                "f64" => NumberSuffix::F64,
+
+                ch => {
+                    self.error(LexerError::UnsupportedNumberSuffix(
+                        UnsupportedNumberSuffix {
+                            dbg_line: dbg_line!(),
+                            suffix: ch.to_string(),
+                            position: (start, self.cursor - start).into(),
+                            src: self.code.to_string(),
+                        },
+                    ));
+
+                    NumberSuffix::None
+                }
             }
         }
     }
 
-    pub fn read_slice_within(&mut self, range: Range<usize>) -> Result<&'a str> {
-        let slice = &self.input[range];
+    pub fn lex_string(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 1; // Skip "
 
-        if let Some(str) = str::from_utf8(slice).ok() {
-            Ok(str)
-        } else {
-            bail!("Failed to parse slice as UTF-8: {:?}", slice)
-        }
-    }
-
-    pub fn read_str_that_matches(&mut self, match_fn: Matcher) -> Result<&'a str> {
-        let from = self.cursor;
-
-        while match_fn(self.current(), &self.input[from..self.cursor]) {
-            self.cursor += 1;
-        }
-
-        if from == self.cursor {
-            Ok(EMPTY_STR)
-        } else {
-            let slice = &self.input[from..self.cursor];
-            if let Some(str) = str::from_utf8(slice).ok() {
-                self.cursor -= 1;
-                Ok(str)
-            } else {
-                bail!("Failed to parse slice as UTF-8: {:?}", slice)
+        let mut string = String::new();
+        loop {
+            match self.peek() {
+                Some('"') => {
+                    self.cursor += 1;
+                    break;
+                }
+                Some(ch) => {
+                    string.push(*ch);
+                    self.cursor += 1
+                }
+                None => break,
             }
         }
+
+        Token::String(string, (start, self.cursor).into())
     }
 
-    pub fn skip_matches(&mut self, match_fn: Matcher) {
-        let from = self.cursor;
-        while match_fn(self.current(), &self.input[from..self.cursor]) {
-            self.cursor += 1;
+    pub fn lex_char(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 1; // Skip '
+
+        match (self.peek(), self.peek_next(1)) {
+            (Some(ch), Some('\'')) => {
+                let ch = *ch;
+                self.cursor += 2;
+                Token::Char(ch, (start, self.cursor - start).into())
+            }
+            (_, Some(end)) => self.error(LexerError::UnexpectedCharacter(UnexpectedCharacter {
+                dbg_line: dbg_line!(),
+                actual: *end,
+                expected: '\'',
+                position: (start + 2, self.cursor - start).into(),
+                src: self.code.to_string(),
+            })),
+            _ => self.error(LexerError::UnexpectedEOF(UnexpectedEOF {
+                dbg_line: dbg_line!(),
+                expected: '\'',
+                position: (start, self.cursor - start).into(),
+                src: self.code.to_string(),
+            })),
         }
     }
 
-    pub fn lex(mut self) -> Result<Vec<TokenSpan<'a>>> {
-        let mut tokens: Vec<TokenSpan<'a>> = Vec::new();
-        let mut parse_type = false;
+    pub fn lex_fw_slash(&mut self) -> Token {
+        match self.peek_next(1) {
+            Some('/') => self.lex_line_comment(),
+            Some('*') => self.lex_block_comment(),
+            Some('=') => self.lex_divide_assign(),
+            _ => self.lex_divide(),
+        }
+    }
 
+    pub fn lex_line_comment(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 2; // Skip //
+
+        let mut string = String::new();
         loop {
-            self.skip_whitespace();
-            let span_from = self.cursor;
-
-            let token = match self.current() {
-                _ if parse_type => {
-                    let type_str = self.read_str_that_matches(VALUE_TYPE_MATCHER)?;
-                    parse_type = false;
-                    Token::Type(type_str)
-                }
-
-                0 => break,
-
-                b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
-                    let str = self.read_str_that_matches(IDENTIFIER_MATCHER)?;
-
-                    match &*str {
-                        "fun" => Token::Function,
-                        "return" => Token::Return,
-                        "bail" => Token::Bail,
-
-                        "for" => Token::For,
-                        "while" => Token::While,
-                        "loop" => Token::Loop,
-                        "in" => Token::In,
-                        "break" => Token::Break,
-                        "continue" => Token::Continue,
-
-                        "if" => Token::If,
-                        "else" => Token::Else,
-
-                        "match" => Token::Match,
-
-                        "false" => Token::Bool(false),
-                        "true" => Token::Bool(true),
-
-                        "let" => Token::VariableDeclaration,
-                        "mut" => Token::Mutable,
-
-                        "enum" => Token::Enum,
-                        "struct" => Token::Struct,
-
-                        _ => Token::Identifier(str),
-                    }
-                }
-
-                b'0'..=b'9' => {
-                    self.skip_whitespace();
-                    let start = self.cursor;
-
-                    self.skip_matches(NUMBER_MATCHER);
-
-                    if self.current() == b'.' && self.peek_next().is_ascii_digit() {
-                        self.cursor += 2;
-                        self.skip_matches(NUMBER_MATCHER);
-
-                        let float = self.read_slice_within(start..self.cursor)?;
-                        let suffix = self.read_str_that_matches(IDENTIFIER_MATCHER)?;
-                        let token = match suffix {
-                            "f32" => Token::Float32({
-                                if let Ok(float) = float.parse::<f32>() {
-                                    float
-                                } else {
-                                    bail!("Failed to parse float: {:?}", float);
-                                }
-                            }),
-                            "f64" => Token::Float64({
-                                if let Ok(float) = float.parse::<f64>() {
-                                    float
-                                } else {
-                                    bail!("Failed to parse float: {:?}", float);
-                                }
-                            }),
-                            _ if suffix.is_empty() => {
-                                self.cursor -= 1;
-                                Token::UnknownFloat(float)
-                            }
-                            _ => bail!("Unknown float suffix: {:?}", suffix),
-                        };
-
-                        token
-                    } else {
-                        let number = self.read_slice_within(start..self.cursor)?;
-                        let suffix = self.read_str_that_matches(IDENTIFIER_MATCHER)?;
-                        let token = match suffix {
-                            "i32" => Token::Integer32({
-                                if let Ok(number) = number.parse::<i32>() {
-                                    number
-                                } else {
-                                    bail!("Failed to parse number: {:?}", number);
-                                }
-                            }),
-                            "i64" => Token::Integer64({
-                                if let Ok(number) = number.parse::<i64>() {
-                                    number
-                                } else {
-                                    bail!("Failed to parse number: {:?}", number);
-                                }
-                            }),
-                            _ if suffix.is_empty() => {
-                                self.cursor -= 1;
-                                Token::UnknownInteger(number)
-                            }
-                            _ => bail!("Unknown integer suffix: {:?}", suffix),
-                        };
-
-                        token
-                    }
-                }
-
-                b'{' => Token::LeftCurly,
-                b'}' => Token::RightCurly,
-                b'(' => Token::LeftParen,
-                b')' => Token::RightParen,
-                b'[' => Token::LeftBracket,
-                b']' => Token::RightBracket,
-
-                b',' => Token::Comma,
-                b':' => {
-                    parse_type = true;
-                    Token::Colon
-                }
-                b';' => Token::Semicolon,
-
-                b'"' => {
+            match self.peek() {
+                Some('\n') => {
                     self.cursor += 1;
-                    let str = self.read_str_that_matches(NOT_QUOTE_MATCHER)?;
-                    self.cursor += 1;
-                    Token::String(str)
+                    break;
                 }
+                Some(ch) => {
+                    string.push(*ch);
+                    self.cursor += 1
+                }
+                None => break,
+            }
+        }
 
-                b'+' => match self.peek_next() {
-                    b'=' => {
-                        self.cursor += 1;
-                        Token::AddAssign
-                    }
-                    _ => Token::Add,
-                },
+        Token::LineComment(string, (start, self.cursor).into())
+    }
 
-                b'-' => match self.peek_next() {
-                    b'>' => {
-                        self.cursor += 2;
-                        self.skip_whitespace();
+    pub fn lex_block_comment(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 2; // Skip /*
 
-                        let return_type = self.read_str_that_matches(VALUE_TYPE_MATCHER)?;
-                        self.cursor -= 1;
-
-                        Token::ReturnType(return_type.try_into()?)
-                    }
-                    b'=' => {
-                        self.cursor += 1;
-                        Token::SubtractAssign
-                    }
-                    _ => Token::Subtract,
-                },
-
-                b'?' => match self.peek_next() {
-                    b'>' => {
-                        self.cursor += 2;
-                        self.skip_whitespace();
-
-                        let return_type = self.read_str_that_matches(VALUE_TYPE_MATCHER)?;
-                        self.cursor -= 1;
-
-                        Token::DubiousReturnType(return_type.try_into()?)
-                    }
-                    _ => Token::QuestionMark,
-                },
-
-                b'/' => match self.peek_next() {
-                    b'/' => Token::LineComment(self.read_str_that_matches(NOT_NEWLINE_MATCHER)?),
-                    b'=' => {
-                        self.cursor += 1;
-                        Token::DivideAssign
-                    }
-                    _ => Token::Divide,
-                },
-
-                b'*' => match self.peek_next() {
-                    b'=' => {
-                        self.cursor += 1;
-                        Token::MutliplyAssign
-                    }
-                    _ => Token::Multiply,
-                },
-
-                b'%' => match self.peek_next() {
-                    b'=' => {
-                        self.cursor += 1;
-                        Token::ModuloAssign
-                    }
-                    _ => Token::Modulo,
-                },
-
-                b'=' => match self.peek_next() {
-                    b'=' => {
-                        self.cursor += 1;
-                        Token::Equal
-                    }
-                    _ => Token::Assign,
-                },
-
-                b'>' => match self.peek_next() {
-                    b'=' => {
-                        self.cursor += 1;
-                        Token::GreaterThanOrEqual
-                    }
-                    _ => Token::GreaterThan,
-                },
-
-                b'<' => match self.peek_next() {
-                    b'=' => {
-                        self.cursor += 1;
-                        Token::LessThanOrEqual
-                    }
-                    _ => Token::LessThan,
-                },
-
-                b'&' => match self.peek_next() {
-                    b'&' => {
-                        self.cursor += 1;
-                        Token::And
-                    }
-                    _ => Token::Unexpected,
-                },
-
-                b'|' => match self.peek_next() {
-                    b'|' => {
-                        self.cursor += 1;
-                        Token::Or
-                    }
-                    _ => Token::Pipe,
-                },
-
-                b'!' => match self.peek_next() {
-                    b'=' => {
-                        self.cursor += 1;
-                        Token::NotEqual
-                    }
-                    b'&' => {
-                        self.cursor += 1;
-                        Token::Nand
-                    }
-                    b'|' => {
-                        self.cursor += 1;
-                        Token::Nor
-                    }
-                    _ => Token::Bang,
-                },
-
-                b'.' => match self.peek_next() {
-                    b'.' => {
-                        self.cursor += 1;
-                        match self.peek_next() {
-                            b'=' => {
-                                self.cursor += 1;
-                                Token::InclusiveRange
-                            }
-                            _ => Token::ExclusiveRange,
+        let mut string = String::new();
+        loop {
+            match self.peek() {
+                Some('*') => {
+                    self.cursor += 1;
+                    match self.peek() {
+                        Some('/') => {
+                            self.cursor += 1;
+                            break;
                         }
+                        _ => string.push('*'),
                     }
-                    _ => Token::Access,
-                },
-
-                char if char.is_ascii_whitespace() => {
-                    self.cursor += 1;
-                    continue;
                 }
-
-                char => todo!("{}", char::from(char)),
-            };
-
-            tokens.push(TokenSpan::new(span_from, self.cursor, token));
-
-            self.cursor += 1;
+                Some(ch) => {
+                    string.push(*ch);
+                    self.cursor += 1
+                }
+                None => break,
+            }
         }
 
-        Ok(tokens)
+        Token::BlockComment(string, (start, self.cursor).into())
+    }
+
+    pub fn lex_divide_assign(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 2;
+        Token::DivideAssign((start, self.cursor).into())
+    }
+
+    pub fn lex_divide(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 1;
+        Token::Divide((start, self.cursor).into())
+    }
+
+    pub fn lex_asterisk(&mut self) -> Token {
+        match self.peek() {
+            Some('=') => self.lex_multiply_assign(),
+            _ => self.lex_multiply(),
+        }
+    }
+
+    pub fn lex_multiply_assign(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 2;
+        Token::MultiplyAssign((start, self.cursor).into())
+    }
+
+    pub fn lex_multiply(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 1;
+        Token::Multiply((start, self.cursor).into())
+    }
+
+    pub fn lex_plus(&mut self) -> Token {
+        match self.peek() {
+            Some('=') => self.lex_add_assign(),
+            _ => self.lex_add(),
+        }
+    }
+
+    pub fn lex_add_assign(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 2;
+        Token::AddAssign((start, self.cursor).into())
+    }
+
+    pub fn lex_add(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 1;
+        Token::Add((start, self.cursor).into())
+    }
+
+    // lex_minus with methods for lex_subtract and lex_subtract_assign
+    pub fn lex_minus(&mut self) -> Token {
+        match self.peek() {
+            Some('=') => self.lex_subtract_assign(),
+            _ => self.lex_subtract(),
+        }
+    }
+
+    pub fn lex_subtract_assign(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 2;
+        Token::SubtractAssign((start, self.cursor).into())
+    }
+
+    pub fn lex_subtract(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 1;
+        Token::Subtract((start, self.cursor).into())
+    }
+
+    pub fn lex_percent(&mut self) -> Token {
+        match self.peek() {
+            Some('=') => self.lex_modulo_assign(),
+            _ => self.lex_modulo(),
+        }
+    }
+
+    pub fn lex_modulo_assign(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 2;
+        Token::ModuloAssign((start, self.cursor).into())
+    }
+
+    pub fn lex_modulo(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 1;
+        Token::Modulo((start, self.cursor).into())
+    }
+
+    pub fn lex_equals(&mut self) -> Token {
+        match self.peek() {
+            Some('=') => self.lex_equals_equals(),
+            _ => self.lex_assign(),
+        }
+    }
+
+    pub fn lex_equals_equals(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 2;
+        Token::Equals((start, self.cursor).into())
+    }
+
+    pub fn lex_assign(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 1;
+        Token::Assign((start, self.cursor).into())
+    }
+
+    pub fn lex_right_pointy_bracket(&mut self) -> Token {
+        match self.peek() {
+            Some('=') => self.lex_greater_than_or_equal(),
+            _ => self.lex_greater_than(),
+        }
+    }
+
+    pub fn lex_greater_than(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 1;
+        Token::GreaterThan((start, self.cursor).into())
+    }
+
+    pub fn lex_greater_than_or_equal(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 2;
+        Token::GreaterThanOrEqual((start, self.cursor).into())
+    }
+
+    pub fn lex_left_pointy_bracket(&mut self) -> Token {
+        match self.peek() {
+            Some('=') => self.lex_less_than_or_equal(),
+            _ => self.lex_less_than(),
+        }
+    }
+
+    pub fn lex_less_than_or_equal(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 2;
+        Token::LessThanOrEqual((start, self.cursor).into())
+    }
+
+    pub fn lex_less_than(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 1;
+        Token::LessThan((start, self.cursor).into())
+    }
+
+    pub fn lex_left_curly_bracket(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 1;
+        Token::LeftCurly((start, self.cursor).into())
+    }
+
+    pub fn lex_right_curly_bracket(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 1;
+        Token::RightCurly((start, self.cursor).into())
+    }
+
+    pub fn lex_left_square_bracket(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 1;
+        Token::LeftSquare((start, self.cursor).into())
+    }
+
+    pub fn lex_right_square_bracket(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 1;
+        Token::RightSquare((start, self.cursor).into())
+    }
+
+    pub fn lex_left_parenthesis(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 1;
+        Token::LeftParen((start, self.cursor).into())
+    }
+
+    pub fn lex_right_parenthesis(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 1;
+        Token::RightParen((start, self.cursor).into())
+    }
+
+    pub fn lex_question_mark(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 1;
+        Token::Bail((start, self.cursor).into())
+    }
+
+    // lex_exclamation_mark with methods for lex_not and lex_not_equals
+    pub fn lex_exclamation_mark(&mut self) -> Token {
+        match self.peek_next(1) {
+            Some('=') => self.lex_not_equals(),
+            Some('&') => self.lex_nand(),
+            Some('|') => self.lex_nor(),
+            _ => self.lex_not(),
+        }
+    }
+
+    pub fn lex_not_equals(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 2;
+        Token::NotEquals((start, self.cursor).into())
+    }
+
+    pub fn lex_nand(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 2;
+        Token::Nand((start, self.cursor).into())
+    }
+
+    pub fn lex_nor(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 2;
+        Token::Nor((start, self.cursor).into())
+    }
+
+    pub fn lex_not(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 1;
+        Token::Not((start, self.cursor).into())
+    }
+
+    pub fn lex_ampersand(&mut self) -> Token {
+        match self.peek_next(1) {
+            Some('&') => self.lex_and(),
+            Some(ch) => self.error(LexerError::UnexpectedCharacter(UnexpectedCharacter {
+                dbg_line: dbg_line!(),
+                actual: *ch,
+                expected: '&',
+                position: (self.cursor, self.cursor + 1).into(),
+                src: self.code.to_string(),
+            })),
+            None => self.error(LexerError::UnexpectedEOF(UnexpectedEOF {
+                dbg_line: dbg_line!(),
+                expected: '&',
+                position: (self.cursor, self.cursor + 1).into(),
+                src: self.code.to_string(),
+            })),
+        }
+    }
+
+    pub fn lex_and(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 2;
+        Token::And((start, self.cursor).into())
+    }
+
+    pub fn lex_pipe(&mut self) -> Token {
+        match self.peek_next(1) {
+            Some('|') => self.lex_or(),
+            Some(ch) => self.error(LexerError::UnexpectedCharacter(UnexpectedCharacter {
+                dbg_line: dbg_line!(),
+                actual: *ch,
+                expected: '|',
+                position: (self.cursor, self.cursor + 1).into(),
+                src: self.code.to_string(),
+            })),
+            None => self.error(LexerError::UnexpectedEOF(UnexpectedEOF {
+                dbg_line: dbg_line!(),
+                expected: '|',
+                position: (self.cursor, self.cursor + 1).into(),
+                src: self.code.to_string(),
+            })),
+        }
+    }
+
+    pub fn lex_or(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 2;
+        Token::Or((start, self.cursor).into())
+    }
+
+    pub fn lex_dot(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 1;
+        Token::Dot((start, self.cursor).into())
+    }
+
+    pub fn lex_colon(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 1;
+        Token::Colon((start, self.cursor).into())
+    }
+
+    pub fn lex_comma(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 1;
+        Token::Comma((start, self.cursor).into())
+    }
+
+    pub fn lex_semicolon(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 1;
+        Token::Semicolon((start, self.cursor).into())
+    }
+}
+
+impl Iterator for Lexer<'_> {
+    type Item = Token;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let char = self.peek()?;
+
+        let token = match char {
+            'a'..='z' | 'A'..='Z' => self.lex_ident_or_keyword(),
+            '1'..='9' => self.lex_decimal_number(),
+            '0' => self.lex_number(),
+            '"' => self.lex_string(),
+            '\'' => self.lex_char(),
+
+            '/' => self.lex_fw_slash(),
+            '*' => self.lex_asterisk(),
+            '+' => self.lex_plus(),
+            '-' => self.lex_minus(),
+            '%' => self.lex_percent(),
+
+            '>' => self.lex_right_pointy_bracket(),
+            '<' => self.lex_left_pointy_bracket(),
+            '=' => self.lex_equals(),
+            '&' => self.lex_ampersand(),
+            '|' => self.lex_pipe(),
+
+            '?' => self.lex_question_mark(),
+            '!' => self.lex_exclamation_mark(),
+
+            '{' => self.lex_left_curly_bracket(),
+            '}' => self.lex_right_curly_bracket(),
+            '[' => self.lex_left_square_bracket(),
+            ']' => self.lex_right_square_bracket(),
+            '(' => self.lex_left_parenthesis(),
+            ')' => self.lex_right_parenthesis(),
+
+            '.' => self.lex_dot(),
+            ':' => self.lex_colon(),
+            ',' => self.lex_comma(),
+            ';' => self.lex_semicolon(),
+
+            ch if ch.is_whitespace() => {
+                self.cursor += 1;
+                return self.next();
+            }
+            _ => None?,
+        };
+
+        Some(token)
     }
 }

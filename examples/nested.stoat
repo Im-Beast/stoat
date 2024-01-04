@@ -1,0 +1,13 @@
+    let mut space = "";
+
+for x in 1i32..10i32 {
+    for y in 1i32..10i32 {
+        if x == y {
+            space += "x";
+        } else {
+            space += " ";
+        }
+    }
+		
+    println("{}", space);
+}
