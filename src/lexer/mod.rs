@@ -8,22 +8,6 @@ macro_rules! dbg_line {
     };
 }
 
-pub fn lex() {
-    let code = include_str!("./example_code.st");
-    let lexer = Lexer::new(code);
-
-    let result = lexer.lex();
-
-    println!("{:?}", result.tokens);
-
-    if !result.errors.is_empty() {
-        for error in result.errors {
-            eprintln!("{:?}", error.into_err_report());
-        }
-        std::process::exit(1);
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 pub struct Span {
     start: usize,
@@ -81,8 +65,10 @@ pub enum Token {
     // Punctuation
     Semicolon(Span),
     Colon(Span),
+    DoubleColon(Span),
     Comma(Span),
     Dot(Span),
+    DoubleDot(Span),
 
     // Data types
     Number(NumberPrefix, NumberSuffix, String, Span),
@@ -112,28 +98,30 @@ pub enum Token {
     Break(Span),
     Continue(Span),
     Match(Span),
+    Import(Span),
+    Export(Span),
 
     // Math operators
-    Add(Span),
-    Subtract(Span),
-    Multiply(Span),
-    Divide(Span),
-    Modulo(Span),
+    Add(Span),      // +
+    Subtract(Span), // -
+    Multiply(Span), // *
+    Divide(Span),   // /
+    Modulo(Span),   // %
 
     // Logical operators
-    And(Span),
-    Nand(Span),
-    Or(Span),
-    Nor(Span),
-    Not(Span),
+    And(Span),  // &&
+    Nand(Span), // !&
+    Or(Span),   // ||
+    Nor(Span),  // !|
+    Not(Span),  // !
 
     // Assignment operators
-    Assign(Span),
-    AddAssign(Span),
-    SubtractAssign(Span),
-    MultiplyAssign(Span),
-    DivideAssign(Span),
-    ModuloAssign(Span),
+    Assign(Span),         // =
+    AddAssign(Span),      // +=
+    SubtractAssign(Span), // -=
+    MultiplyAssign(Span), // *=
+    DivideAssign(Span),   // /=
+    ModuloAssign(Span),   // %=
 
     // Comparison operators
     Equals(Span),             // ==
@@ -142,6 +130,10 @@ pub enum Token {
     LessThanOrEqual(Span),    // <=
     GreaterThan(Span),        // >
     GreaterThanOrEqual(Span), // >=
+
+    // Other operators
+    LeftArrow(Span),  // <-
+    RightArrow(Span), // ->
 }
 
 #[derive(Debug, Clone)]
@@ -245,6 +237,8 @@ impl<'a> Lexer<'a> {
             "break" => Token::Break(span),
             "continue" => Token::Continue(span),
             "match" => Token::Match(span),
+            "import" => Token::Import(span),
+            "export" => Token::Export(span),
             _ => Token::Identifier(string, span),
         }
     }
@@ -505,8 +499,15 @@ impl<'a> Lexer<'a> {
     pub fn lex_minus(&mut self) -> Token {
         match self.peek() {
             Some('=') => self.lex_subtract_assign(),
+            Some('>') => self.lex_right_arrow(),
             _ => self.lex_subtract(),
         }
+    }
+
+    pub fn lex_right_arrow(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 2;
+        Token::RightArrow((start, self.cursor).into())
     }
 
     pub fn lex_subtract_assign(&mut self) -> Token {
@@ -581,8 +582,15 @@ impl<'a> Lexer<'a> {
     pub fn lex_left_pointy_bracket(&mut self) -> Token {
         match self.peek() {
             Some('=') => self.lex_less_than_or_equal(),
+            Some('-') => self.lex_left_arrow(),
             _ => self.lex_less_than(),
         }
+    }
+
+    pub fn lex_left_arrow(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 2;
+        Token::LeftArrow((start, self.cursor).into())
     }
 
     pub fn lex_less_than_or_equal(&mut self) -> Token {
@@ -726,13 +734,25 @@ impl<'a> Lexer<'a> {
     pub fn lex_dot(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 1;
-        Token::Dot((start, self.cursor).into())
+        match self.peek() {
+            Some('.') => {
+                self.cursor += 1;
+                Token::DoubleDot((start, self.cursor).into())
+            }
+            _ => Token::Dot((start, self.cursor).into()),
+        }
     }
 
     pub fn lex_colon(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 1;
-        Token::Colon((start, self.cursor).into())
+        match self.peek() {
+            Some(':') => {
+                self.cursor += 1;
+                Token::DoubleColon((start, self.cursor).into())
+            }
+            _ => Token::Colon((start, self.cursor).into()),
+        }
     }
 
     pub fn lex_comma(&mut self) -> Token {
