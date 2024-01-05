@@ -1,6 +1,6 @@
 use miette::{bail, Result};
 
-use crate::{interpreter::Interpreter, lexer::Lexer, parser::Parser};
+use crate::{lexer::Lexer, shared::interner::Interner};
 
 pub fn run_file(file_path: &str, debug: bool) -> Result<()> {
     let code = std::fs::read_to_string(file_path);
@@ -12,32 +12,19 @@ pub fn run_file(file_path: &str, debug: bool) -> Result<()> {
 }
 
 pub fn run(code: &str, debug: bool) -> Result<()> {
+    let interner = Interner::default();
+
     let lexer = Lexer::new(code);
-    let tokens = match lexer.lex() {
-        Ok(tokens) => {
-            if debug {
-                println!("Tokens:\n{tokens:?}");
-            }
-            tokens
+    let result = lexer.lex();
+    if !result.errors.is_empty() {
+        for error in result.errors {
+            eprintln!("Lexing errors: \n{:?}", error.into_err_report());
         }
-        Err(e) => bail!("Failed to lex code: {e:?}"),
-    };
+        bail!("Failed to lex the code");
+    }
 
-    let parser = Parser::new(code, tokens);
-    let ast = match parser.parse() {
-        Ok(ast) => {
-            if debug {
-                println!("AST:\n{ast:?}");
-            }
-            ast
-        }
-        Err(e) => bail!("Failed to parse code: {e:?}"),
-    };
-
-    let interpreter = Interpreter::new(ast);
-    match interpreter.evaluate() {
-        Ok(_) => {}
-        Err(e) => bail!("Failed to interpret code: {e:?}"),
+    if debug {
+        println!("Tokens:\n{:#?}", result.tokens);
     }
 
     Ok(())

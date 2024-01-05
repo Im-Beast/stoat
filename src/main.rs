@@ -1,15 +1,9 @@
-mod shared;
-
 mod cli;
-
-mod interpreter;
 mod lexer;
-mod new_lexer;
-mod parser;
+mod shared;
 
 use std::process::ExitCode;
 
-fn main() {
-    new_lexer::lex();
-    // cli::parse_cli()
+fn main() -> ExitCode {
+    cli::parse_cli()
 }

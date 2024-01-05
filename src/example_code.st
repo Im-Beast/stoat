@@ -1,0 +1,27 @@
+import builtins::{
+  print
+};
+
+import ./example_code.st::{
+  dog
+};
+
+export fun dog(i: i32) -> i32 {
+  return i * 2;
+}
+
+let a: i32 = 5;
+let b = 5i32;
+let mut c = 3;
+c += 2;
+
+if a > b {
+  print("hello {}", "world");
+}
+
+if a != b {}
+if a == b {}
+if a > b {}
+if a < b {}
+
+THE_END;
