@@ -1,26 +1,12 @@
 mod errors;
-
 use self::errors::{LexerError, UnexpectedCharacter, UnexpectedEOF, UnsupportedNumberSuffix};
+
+use crate::{shared::span::Span, span};
 
 macro_rules! dbg_line {
     () => {
         format!("{}:{}", file!(), line!())
     };
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Span {
-    start: usize,
-    end: usize,
-}
-
-impl Into<Span> for (usize, usize) {
-    fn into(self) -> Span {
-        Span {
-            start: self.0,
-            end: self.1,
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -201,10 +187,10 @@ impl<'a> Lexer<'a> {
             self.cursor = self.chars.len();
             Token::Garbage(
                 Some(self.chars[start..].iter().collect()),
-                (start, self.cursor).into(),
+                span!(start, self.cursor),
             )
         } else {
-            Token::Garbage(None, (self.cursor, self.chars.len()).into())
+            Token::Garbage(None, span!(self.cursor, self.chars.len()))
         }
     }
 
@@ -220,7 +206,7 @@ impl<'a> Lexer<'a> {
         let start = self.cursor;
         let string = string_with_match_pattern!(self, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_');
 
-        let span: Span = (start, self.cursor).into();
+        let span: Span = span!(start, self.cursor);
 
         match string.as_str() {
             "let" => Token::Let(span),
@@ -260,7 +246,7 @@ impl<'a> Lexer<'a> {
             NumberPrefix::None,
             self.lex_number_suffix(),
             string,
-            (start, self.cursor).into(),
+            span!(start, self.cursor),
         )
     }
 
@@ -272,7 +258,7 @@ impl<'a> Lexer<'a> {
             NumberPrefix::Octal,
             self.lex_number_suffix(),
             string,
-            (start, self.cursor).into(),
+            span!(start, self.cursor),
         )
     }
 
@@ -284,7 +270,7 @@ impl<'a> Lexer<'a> {
             NumberPrefix::Hexadecimal,
             self.lex_number_suffix(),
             string,
-            (start, self.cursor).into(),
+            span!(start, self.cursor),
         )
     }
 
@@ -296,7 +282,7 @@ impl<'a> Lexer<'a> {
             NumberPrefix::Binary,
             self.lex_number_suffix(),
             string,
-            (start, self.cursor).into(),
+            span!(start, self.cursor),
         )
     }
 
@@ -327,7 +313,7 @@ impl<'a> Lexer<'a> {
                         UnsupportedNumberSuffix {
                             dbg_line: dbg_line!(),
                             suffix: ch.to_string(),
-                            position: (start, self.cursor - start).into(),
+                            position: span!(start, self.cursor),
                             src: self.code.to_string(),
                         },
                     ));
@@ -357,7 +343,7 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        Token::String(string, (start, self.cursor).into())
+        Token::String(string, span!(start, self.cursor))
     }
 
     pub fn lex_char(&mut self) -> Token {
@@ -368,19 +354,19 @@ impl<'a> Lexer<'a> {
             (Some(ch), Some('\'')) => {
                 let ch = *ch;
                 self.cursor += 2;
-                Token::Char(ch, (start, self.cursor - start).into())
+                Token::Char(ch, span!(start, self.cursor))
             }
             (_, Some(end)) => self.error(LexerError::UnexpectedCharacter(UnexpectedCharacter {
                 dbg_line: dbg_line!(),
                 actual: *end,
                 expected: '\'',
-                position: (start + 2, self.cursor - start).into(),
+                position: span!(start + 2, self.cursor + 2),
                 src: self.code.to_string(),
             })),
             _ => self.error(LexerError::UnexpectedEOF(UnexpectedEOF {
                 dbg_line: dbg_line!(),
                 expected: '\'',
-                position: (start, self.cursor - start).into(),
+                position: span!(start, self.cursor),
                 src: self.code.to_string(),
             })),
         }
@@ -414,7 +400,7 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        Token::LineComment(string, (start, self.cursor).into())
+        Token::LineComment(string, span!(start, self.cursor))
     }
 
     pub fn lex_block_comment(&mut self) -> Token {
@@ -442,19 +428,19 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        Token::BlockComment(string, (start, self.cursor).into())
+        Token::BlockComment(string, span!(start, self.cursor))
     }
 
     pub fn lex_divide_assign(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 2;
-        Token::DivideAssign((start, self.cursor).into())
+        Token::DivideAssign(span!(start, self.cursor))
     }
 
     pub fn lex_divide(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 1;
-        Token::Divide((start, self.cursor).into())
+        Token::Divide(span!(start, self.cursor))
     }
 
     pub fn lex_asterisk(&mut self) -> Token {
@@ -467,13 +453,13 @@ impl<'a> Lexer<'a> {
     pub fn lex_multiply_assign(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 2;
-        Token::MultiplyAssign((start, self.cursor).into())
+        Token::MultiplyAssign(span!(start, self.cursor))
     }
 
     pub fn lex_multiply(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 1;
-        Token::Multiply((start, self.cursor).into())
+        Token::Multiply(span!(start, self.cursor))
     }
 
     pub fn lex_plus(&mut self) -> Token {
@@ -486,13 +472,13 @@ impl<'a> Lexer<'a> {
     pub fn lex_add_assign(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 2;
-        Token::AddAssign((start, self.cursor).into())
+        Token::AddAssign(span!(start, self.cursor))
     }
 
     pub fn lex_add(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 1;
-        Token::Add((start, self.cursor).into())
+        Token::Add(span!(start, self.cursor))
     }
 
     // lex_minus with methods for lex_subtract and lex_subtract_assign
@@ -507,19 +493,19 @@ impl<'a> Lexer<'a> {
     pub fn lex_right_arrow(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 2;
-        Token::RightArrow((start, self.cursor).into())
+        Token::RightArrow(span!(start, self.cursor))
     }
 
     pub fn lex_subtract_assign(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 2;
-        Token::SubtractAssign((start, self.cursor).into())
+        Token::SubtractAssign(span!(start, self.cursor))
     }
 
     pub fn lex_subtract(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 1;
-        Token::Subtract((start, self.cursor).into())
+        Token::Subtract(span!(start, self.cursor))
     }
 
     pub fn lex_percent(&mut self) -> Token {
@@ -532,13 +518,13 @@ impl<'a> Lexer<'a> {
     pub fn lex_modulo_assign(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 2;
-        Token::ModuloAssign((start, self.cursor).into())
+        Token::ModuloAssign(span!(start, self.cursor))
     }
 
     pub fn lex_modulo(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 1;
-        Token::Modulo((start, self.cursor).into())
+        Token::Modulo(span!(start, self.cursor))
     }
 
     pub fn lex_equals(&mut self) -> Token {
@@ -551,13 +537,13 @@ impl<'a> Lexer<'a> {
     pub fn lex_equals_equals(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 2;
-        Token::Equals((start, self.cursor).into())
+        Token::Equals(span!(start, self.cursor))
     }
 
     pub fn lex_assign(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 1;
-        Token::Assign((start, self.cursor).into())
+        Token::Assign(span!(start, self.cursor))
     }
 
     pub fn lex_right_pointy_bracket(&mut self) -> Token {
@@ -570,13 +556,13 @@ impl<'a> Lexer<'a> {
     pub fn lex_greater_than(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 1;
-        Token::GreaterThan((start, self.cursor).into())
+        Token::GreaterThan(span!(start, self.cursor))
     }
 
     pub fn lex_greater_than_or_equal(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 2;
-        Token::GreaterThanOrEqual((start, self.cursor).into())
+        Token::GreaterThanOrEqual(span!(start, self.cursor))
     }
 
     pub fn lex_left_pointy_bracket(&mut self) -> Token {
@@ -590,61 +576,61 @@ impl<'a> Lexer<'a> {
     pub fn lex_left_arrow(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 2;
-        Token::LeftArrow((start, self.cursor).into())
+        Token::LeftArrow(span!(start, self.cursor))
     }
 
     pub fn lex_less_than_or_equal(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 2;
-        Token::LessThanOrEqual((start, self.cursor).into())
+        Token::LessThanOrEqual(span!(start, self.cursor))
     }
 
     pub fn lex_less_than(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 1;
-        Token::LessThan((start, self.cursor).into())
+        Token::LessThan(span!(start, self.cursor))
     }
 
     pub fn lex_left_curly_bracket(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 1;
-        Token::LeftCurly((start, self.cursor).into())
+        Token::LeftCurly(span!(start, self.cursor))
     }
 
     pub fn lex_right_curly_bracket(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 1;
-        Token::RightCurly((start, self.cursor).into())
+        Token::RightCurly(span!(start, self.cursor))
     }
 
     pub fn lex_left_square_bracket(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 1;
-        Token::LeftSquare((start, self.cursor).into())
+        Token::LeftSquare(span!(start, self.cursor))
     }
 
     pub fn lex_right_square_bracket(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 1;
-        Token::RightSquare((start, self.cursor).into())
+        Token::RightSquare(span!(start, self.cursor))
     }
 
     pub fn lex_left_parenthesis(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 1;
-        Token::LeftParen((start, self.cursor).into())
+        Token::LeftParen(span!(start, self.cursor))
     }
 
     pub fn lex_right_parenthesis(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 1;
-        Token::RightParen((start, self.cursor).into())
+        Token::RightParen(span!(start, self.cursor))
     }
 
     pub fn lex_question_mark(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 1;
-        Token::Bail((start, self.cursor).into())
+        Token::Bail(span!(start, self.cursor))
     }
 
     // lex_exclamation_mark with methods for lex_not and lex_not_equals
@@ -660,25 +646,25 @@ impl<'a> Lexer<'a> {
     pub fn lex_not_equals(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 2;
-        Token::NotEquals((start, self.cursor).into())
+        Token::NotEquals(span!(start, self.cursor))
     }
 
     pub fn lex_nand(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 2;
-        Token::Nand((start, self.cursor).into())
+        Token::Nand(span!(start, self.cursor))
     }
 
     pub fn lex_nor(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 2;
-        Token::Nor((start, self.cursor).into())
+        Token::Nor(span!(start, self.cursor))
     }
 
     pub fn lex_not(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 1;
-        Token::Not((start, self.cursor).into())
+        Token::Not(span!(start, self.cursor))
     }
 
     pub fn lex_ampersand(&mut self) -> Token {
@@ -688,13 +674,13 @@ impl<'a> Lexer<'a> {
                 dbg_line: dbg_line!(),
                 actual: *ch,
                 expected: '&',
-                position: (self.cursor, self.cursor + 1).into(),
+                position: span!(self.cursor, self.cursor + 1),
                 src: self.code.to_string(),
             })),
             None => self.error(LexerError::UnexpectedEOF(UnexpectedEOF {
                 dbg_line: dbg_line!(),
                 expected: '&',
-                position: (self.cursor, self.cursor + 1).into(),
+                position: span!(self.cursor, self.cursor + 1),
                 src: self.code.to_string(),
             })),
         }
@@ -703,7 +689,7 @@ impl<'a> Lexer<'a> {
     pub fn lex_and(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 2;
-        Token::And((start, self.cursor).into())
+        Token::And(span!(start, self.cursor))
     }
 
     pub fn lex_pipe(&mut self) -> Token {
@@ -713,13 +699,13 @@ impl<'a> Lexer<'a> {
                 dbg_line: dbg_line!(),
                 actual: *ch,
                 expected: '|',
-                position: (self.cursor, self.cursor + 1).into(),
+                position: span!(self.cursor, self.cursor + 1),
                 src: self.code.to_string(),
             })),
             None => self.error(LexerError::UnexpectedEOF(UnexpectedEOF {
                 dbg_line: dbg_line!(),
                 expected: '|',
-                position: (self.cursor, self.cursor + 1).into(),
+                position: span!(self.cursor, self.cursor + 1),
                 src: self.code.to_string(),
             })),
         }
@@ -728,7 +714,7 @@ impl<'a> Lexer<'a> {
     pub fn lex_or(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 2;
-        Token::Or((start, self.cursor).into())
+        Token::Or(span!(start, self.cursor))
     }
 
     pub fn lex_dot(&mut self) -> Token {
@@ -737,9 +723,9 @@ impl<'a> Lexer<'a> {
         match self.peek() {
             Some('.') => {
                 self.cursor += 1;
-                Token::DoubleDot((start, self.cursor).into())
+                Token::DoubleDot(span!(start, self.cursor))
             }
-            _ => Token::Dot((start, self.cursor).into()),
+            _ => Token::Dot(span!(start, self.cursor)),
         }
     }
 
@@ -749,22 +735,22 @@ impl<'a> Lexer<'a> {
         match self.peek() {
             Some(':') => {
                 self.cursor += 1;
-                Token::DoubleColon((start, self.cursor).into())
+                Token::DoubleColon(span!(start, self.cursor))
             }
-            _ => Token::Colon((start, self.cursor).into()),
+            _ => Token::Colon(span!(start, self.cursor)),
         }
     }
 
     pub fn lex_comma(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 1;
-        Token::Comma((start, self.cursor).into())
+        Token::Comma(span!(start, self.cursor))
     }
 
     pub fn lex_semicolon(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 1;
-        Token::Semicolon((start, self.cursor).into())
+        Token::Semicolon(span!(start, self.cursor))
     }
 }
 

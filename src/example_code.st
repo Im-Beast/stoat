@@ -5,7 +5,7 @@ import builtins::{
 import ./example_code.st::{
   dog
 };
-
+''
 export fun dog(i: i32) -> i32 {
   return i * 2;
 }
