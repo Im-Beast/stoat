@@ -20,8 +20,12 @@ pub enum Instruction {
     Divide,
     Modulo,
 
+    Jump,
     JumpAbsolute,
     JumpName,
+    JumpIfEqual,
+
+    Compare,
 
     Print,
 }

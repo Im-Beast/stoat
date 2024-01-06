@@ -25,6 +25,88 @@ pub enum Value {
     MutableReference(Rc<Variable>),
 }
 
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::I8(a), Self::I8(b)) => a == b,
+            (Self::I16(a), Self::I16(b)) => a == b,
+            (Self::I32(a), Self::I32(b)) => a == b,
+            (Self::I64(a), Self::I64(b)) => a == b,
+
+            (Self::U8(a), Self::U8(b)) => a == b,
+            (Self::U16(a), Self::U16(b)) => a == b,
+            (Self::U32(a), Self::U32(b)) => a == b,
+            (Self::U64(a), Self::U64(b)) => a == b,
+
+            (Self::F32(a), Self::F32(b)) => a == b,
+            (Self::F64(a), Self::F64(b)) => a == b,
+
+            (Self::Bool(a), Self::Bool(b)) => a == b,
+            (Self::String(a), Self::String(b)) => a == b,
+
+            (Self::Pointer(a), Self::Pointer(b)) => a == b,
+            (Self::Reference(a), Self::Reference(b)) => Rc::ptr_eq(a, b),
+            (Self::MutableReference(a), Self::MutableReference(b)) => Rc::ptr_eq(a, b),
+
+            _ => false,
+        }
+    }
+}
+
+macro_rules! match_numeric_group {
+    ($a: expr, $b: expr, $op: tt, $err: literal) => {
+        match ($a, $b) {
+            (Value::I8(a), Value::I8(b)) => a $op b,
+            (Value::I16(a), Value::I16(b)) => a $op b,
+            (Value::I32(a), Value::I32(b)) => a $op b,
+            (Value::I64(a), Value::I64(b)) => a $op b,
+            (Value::U8(a), Value::U8(b)) => a $op b,
+            (Value::U16(a), Value::U16(b)) => a $op b,
+            (Value::U32(a), Value::U32(b)) => a $op b,
+            (Value::U64(a), Value::U64(b)) => a $op b,
+            (Value::F32(a), Value::F32(b)) => a $op b,
+            (Value::F64(a), Value::F64(b)) => a $op b,
+            (Value::Pointer(a), Value::Pointer(b)) => a $op b,
+            _ => panic!($err),
+        }
+    };
+}
+
+impl PartialOrd for Value {
+    fn ge(&self, other: &Self) -> bool {
+        match_numeric_group!(self, other, >=, "Cannot compare non-numeric values")
+    }
+
+    fn gt(&self, other: &Self) -> bool {
+        match_numeric_group!(self, other, >, "Cannot compare non-numeric values")
+    }
+
+    fn le(&self, other: &Self) -> bool {
+        match_numeric_group!(self, other, <=, "Cannot compare non-numeric values")
+    }
+
+    fn lt(&self, other: &Self) -> bool {
+        match_numeric_group!(self, other, <, "Cannot compare non-numeric values")
+    }
+
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self, other) {
+            (Value::I8(a), Value::I8(b)) => a.partial_cmp(b),
+            (Value::I16(a), Value::I16(b)) => a.partial_cmp(b),
+            (Value::I32(a), Value::I32(b)) => a.partial_cmp(b),
+            (Value::I64(a), Value::I64(b)) => a.partial_cmp(b),
+            (Value::U8(a), Value::U8(b)) => a.partial_cmp(b),
+            (Value::U16(a), Value::U16(b)) => a.partial_cmp(b),
+            (Value::U32(a), Value::U32(b)) => a.partial_cmp(b),
+            (Value::U64(a), Value::U64(b)) => a.partial_cmp(b),
+            (Value::F32(a), Value::F32(b)) => a.partial_cmp(b),
+            (Value::F64(a), Value::F64(b)) => a.partial_cmp(b),
+            (Value::Pointer(a), Value::Pointer(b)) => a.partial_cmp(b),
+            _ => panic!("Cannot compare non-numeric values"),
+        }
+    }
+}
+
 macro_rules! into_num_impl {
     ($conv_name: ident, $ty: ty) => {
         impl Value {
@@ -41,10 +123,9 @@ macro_rules! into_num_impl {
                     Value::F32(v) => *v as $ty,
                     Value::F64(v) => *v as $ty,
                     Value::Pointer(v) => *v as $ty,
-                    Value::Reference(v) => v.inside_ref().into(),
-                    Value::MutableReference(v) => v.inside_ref().into(),
                     Value::Bool(_) => panic!("Cannot convert boolean to integer"),
                     Value::String(_) => panic!("Cannot convert string to integer"),
+                    v => v.inside_ref().into(),
                 }
             }
         }

@@ -1,6 +1,12 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::{RefCell, UnsafeCell},
+    rc::Rc,
+};
 
-use crate::shared::interner::{Interner, StringID};
+use crate::{
+    shared::interner::{Interner, StringID},
+    vm::variable::{ImmutableVariable, MutableVariable},
+};
 use miette::{bail, Result};
 
 mod stack;
@@ -18,75 +24,79 @@ use variable::Variable;
 pub fn vm_test() {
     let mut vm = VM::default();
 
-    let dog = vm.iterner.intern("dog");
-    let cat = vm.iterner.intern("cat");
+    let a = vm.interner.intern("a");
+    let b = vm.interner.intern("b");
+    let i = vm.interner.intern("i");
+    let temp = vm.interner.intern("temp");
 
-    vm.program = vec![
-        Instruction::Push(Value::I32(2)),
-        Instruction::Push(Value::Pointer(dog)),
+    let loop_label = vm.label_name("loop", 12);
+    let end_label = vm.label_name("end", 42);
+
+    let amount = 91;
+
+    vm.program = Vec::from([
+        // fibonacci sequence till 30th number
+        // a = 0
+        Instruction::Push(Value::I64(0)),
+        Instruction::Push(Value::Pointer(a)),
         Instruction::DeclareLetMut,
-        Instruction::Push(Value::Pointer(dog)),
-        Instruction::Ref,
-        Instruction::Push(Value::I32(3)),
-        Instruction::Add,
-        Instruction::Push(Value::Pointer(dog)),
-        Instruction::Assign,
-        Instruction::Push(Value::Pointer(dog)),
-        Instruction::Ref,
-        Instruction::Print,
-        Instruction::Push(Value::Pointer(3)),
-        Instruction::JumpAbsolute,
-    ];
-
-    /*     vm.program = vec![
-        // let mut dog = 2;
-        Instruction::Push(Value::I32(2)),
-        Instruction::Push(Value::Pointer(dog)),
+        // b = 1
+        Instruction::Push(Value::I64(1)),
+        Instruction::Push(Value::Pointer(b)),
         Instruction::DeclareLetMut,
-        // print(dog)
-        Instruction::Push(Value::Pointer(dog)),
+        // temp = 0
+        Instruction::Push(Value::I64(0)),
+        Instruction::Push(Value::Pointer(temp)),
+        Instruction::DeclareLetMut,
+        // i = 0
+        Instruction::Push(Value::I64(0)),
+        Instruction::Push(Value::Pointer(i)),
+        Instruction::DeclareLetMut,
+        // loop:
+        // if i == 30 jump to end
+        Instruction::Push(Value::Pointer(i)),
         Instruction::Ref,
-        Instruction::Print,
-        // print(dog + 3)
-        Instruction::Push(Value::Pointer(dog)),
+        Instruction::Push(Value::I64(amount)),
+        Instruction::Compare,
+        Instruction::Push(Value::I8(0)),
+        Instruction::Push(Value::Pointer(end_label)),
+        Instruction::JumpIfEqual,
+        // i += 1
+        Instruction::Push(Value::Pointer(i)),
         Instruction::Ref,
-        Instruction::Push(Value::I32(3)),
+        Instruction::Push(Value::I64(1)),
         Instruction::Add,
-        Instruction::Print,
-        // let cat = &dog;
-        Instruction::Push(Value::Pointer(dog)),
-        Instruction::Ref,
-        Instruction::Push(Value::Pointer(cat)),
-        Instruction::DeclareLet,
-        // print(cat)
-        Instruction::Push(Value::Pointer(cat)),
-        Instruction::Ref,
-        Instruction::Print,
-        // print(cat + cat)
-        Instruction::Push(Value::Pointer(cat)),
-        Instruction::Ref,
-        Instruction::Push(Value::Pointer(cat)),
-        Instruction::Ref,
-        Instruction::Add,
-        Instruction::Print,
-        // dog = dog + 3;
-        Instruction::Push(Value::Pointer(dog)),
-        Instruction::Ref,
-        Instruction::Push(Value::I32(3)),
-        Instruction::Add,
-        Instruction::Push(Value::Pointer(dog)),
+        Instruction::Push(Value::Pointer(i)),
         Instruction::Assign,
-        // print(dog)
-        Instruction::Push(Value::Pointer(dog)),
+        // temp = a
+        Instruction::Push(Value::Pointer(a)),
+        Instruction::Clone,
+        Instruction::Push(Value::Pointer(temp)),
+        Instruction::Assign,
+        // a = b
+        Instruction::Push(Value::Pointer(b)),
+        Instruction::Clone,
+        Instruction::Push(Value::Pointer(a)),
+        Instruction::Assign,
+        // b = b + temp
+        Instruction::Push(Value::Pointer(b)),
+        Instruction::Ref,
+        Instruction::Push(Value::Pointer(temp)),
+        Instruction::Ref,
+        Instruction::Add,
+        Instruction::Push(Value::Pointer(b)),
+        Instruction::Assign,
+        // goto loop
+        Instruction::Push(Value::Pointer(loop_label)),
+        Instruction::Jump,
+        // end:
+        // print b
+        Instruction::Push(Value::Pointer(b)),
         Instruction::Ref,
         Instruction::Print,
-        // print(cat)
-        Instruction::Push(Value::Pointer(cat)),
-        Instruction::Ref,
-        Instruction::Print,
-    ]; */
+    ]);
 
-    vm.run().unwrap()
+    vm.run().unwrap();
 }
 
 struct VM<'stack> {
@@ -170,20 +180,23 @@ impl<'stack> VM<'stack> {
 
                 Instruction::Ref => {
                     let pointer = self.stack.pop();
-                    let variable = &self.variables[pointer.as_usize()];
-                    self.stack.push(Value::Reference(Rc::new(variable.clone())))
+                    let variable = self.variables[pointer.as_usize()].clone();
+                    self.stack.push(Value::Reference(variable))
                 }
                 Instruction::Clone => {
                     let pointer = self.stack.pop();
                     let variable = &self.variables[pointer.as_usize()];
-                    self.stack.push(variable.inside_ref().to_owned());
+                    self.stack.push(variable.inside_cloned());
                 }
 
                 Instruction::DeclareLet => {
                     let name = self.stack.pop();
                     let value = self.stack.pop();
 
-                    self.push_variable(name.as_usize(), Variable::Immutable(Rc::new(value)));
+                    self.push_variable(
+                        name.as_usize(),
+                        Variable::Immutable(ImmutableVariable(value)),
+                    );
                 }
                 Instruction::DeclareLetMut => {
                     let name = self.stack.pop();
@@ -191,7 +204,7 @@ impl<'stack> VM<'stack> {
 
                     self.push_variable(
                         name.as_usize(),
-                        Variable::Mutable(Rc::new(RefCell::new(value))),
+                        Variable::Mutable(MutableVariable(value.into())),
                     );
                 }
 
@@ -204,7 +217,9 @@ impl<'stack> VM<'stack> {
                         panic!("Attempted to assign to an immutable variable.")
                     };
 
-                    *variable.borrow_mut() = value;
+                    unsafe {
+                        variable.set(value);
+                    }
                 }
 
                 Instruction::Add => binary_operation!(self, +),
@@ -213,6 +228,10 @@ impl<'stack> VM<'stack> {
                 Instruction::Divide => binary_operation!(self, /),
                 Instruction::Modulo => binary_operation!(self, %),
 
+                Instruction::Jump => {
+                    let pointer = self.stack.pop();
+                    self.jump_interned(pointer.as_usize());
+                }
                 Instruction::JumpAbsolute => {
                     let ip = self.stack.pop();
                     self.jump_abs(ip.into());
@@ -220,6 +239,27 @@ impl<'stack> VM<'stack> {
                 Instruction::JumpName => {
                     let name = self.stack.pop();
                     self.jump_name(name.as_string());
+                }
+
+                Instruction::JumpIfEqual => {
+                    let interned_label = self.stack.pop();
+
+                    let a = deref!(cloned; self.stack.pop());
+                    let b = deref!(cloned; self.stack.pop());
+
+                    if a == b {
+                        self.jump_interned(interned_label.into());
+                    }
+                }
+
+                Instruction::Compare => {
+                    let b = self.stack.pop();
+                    let b = deref!(ref; b);
+                    let a = deref!(cloned; self.stack.pop());
+
+                    let cmp = a.partial_cmp(b).unwrap();
+
+                    self.stack.push(Value::I8(cmp as i8));
                 }
 
                 Instruction::Print => {
@@ -259,6 +299,10 @@ impl<'stack> VM<'stack> {
 
     pub fn jump_abs(&mut self, ip: usize) {
         self.ip = ip;
+    }
+
+    pub fn jump_interned(&mut self, interned: StringID) {
+        self.ip = self.labels[interned];
     }
 
     pub fn jump_name(&mut self, name: &str) {
