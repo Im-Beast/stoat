@@ -132,6 +132,9 @@ impl<'stack> VM<'stack> {
 
             match instruction {
                 Instruction::Push(value) => self.stack.push(value.to_owned()),
+                Instruction::Pop => {
+                    self.stack.pop();
+                }
 
                 Instruction::Ref => {
                     let pointer = self.stack.pop();

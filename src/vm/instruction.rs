@@ -4,6 +4,7 @@ use super::value::Value;
 #[repr(u8)]
 pub enum Instruction {
     Push(Value),
+    Pop,
 
     Ref,
     Clone,
