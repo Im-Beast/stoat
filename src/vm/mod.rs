@@ -92,8 +92,8 @@ pub fn vm_test() {
 struct VM<'stack> {
     iterner: Interner,
 
-    variables: Vec<Variable>, // <StringId, Variable>
-    labels: Vec<usize>,       // <StringId, InstructionIndex>
+    variables: Vec<Rc<Variable>>, // <StringId, Variable>
+    labels: Vec<usize>,           // <StringId, InstructionIndex>
 
     ip: usize,
     program: Vec<Instruction>,
