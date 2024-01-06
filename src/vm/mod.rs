@@ -22,6 +22,23 @@ pub fn vm_test() {
     let cat = vm.iterner.intern("cat");
 
     vm.program = vec![
+        Instruction::Push(Value::I32(2)),
+        Instruction::Push(Value::Pointer(dog)),
+        Instruction::DeclareLetMut,
+        Instruction::Push(Value::Pointer(dog)),
+        Instruction::Ref,
+        Instruction::Push(Value::I32(3)),
+        Instruction::Add,
+        Instruction::Push(Value::Pointer(dog)),
+        Instruction::Assign,
+        Instruction::Push(Value::Pointer(dog)),
+        Instruction::Ref,
+        Instruction::Print,
+        Instruction::Push(Value::Pointer(3)),
+        Instruction::JumpAbsolute,
+    ];
+
+    /*     vm.program = vec![
         // let mut dog = 2;
         Instruction::Push(Value::I32(2)),
         Instruction::Push(Value::Pointer(dog)),
@@ -67,7 +84,7 @@ pub fn vm_test() {
         Instruction::Push(Value::Pointer(cat)),
         Instruction::Ref,
         Instruction::Print,
-    ];
+    ]; */
 
     vm.run().unwrap()
 }
@@ -96,10 +113,34 @@ impl Default for VM<'_> {
     }
 }
 
+macro_rules! deref {
+    ($value: expr) => {{
+        match $value {
+            Value::Reference(v) => v.inside(),
+            Value::MutableReference(v) => v.inside(),
+            v => v,
+        }
+    }};
+    (ref; $value: expr) => {{
+        match $value {
+            Value::Reference(v) => v.inside_ref(),
+            Value::MutableReference(v) => v.inside_ref(),
+            v => v,
+        }
+    }};
+    (cloned; $value: expr) => {{
+        match $value {
+            Value::Reference(v) => v.inside_cloned(),
+            Value::MutableReference(v) => v.inside_cloned(),
+            v => v,
+        }
+    }};
+}
+
 macro_rules! binary_operation {
     ($self: expr, $operand: tt) => {{
-        let a = $self.stack.pop();
-        let b = $self.stack.pop();
+        let a = deref!(cloned; $self.stack.pop());
+        let b = deref!(cloned; $self.stack.pop());
 
         match (a, b) {
             (Value::I8(a), Value::I8(b)) => $self.stack.push(Value::I8(b $operand a)),
@@ -144,7 +185,7 @@ impl<'stack> VM<'stack> {
                 Instruction::Clone => {
                     let pointer = self.stack.pop();
                     let variable = &self.variables[pointer.as_usize()];
-                    self.stack.push(variable.inside_value().to_owned());
+                    self.stack.push(variable.inside_ref().to_owned());
                 }
 
                 Instruction::DeclareLet => {

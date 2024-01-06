@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use super::variable::{MutableVariable, Variable};
+use super::variable::Variable;
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -22,7 +22,7 @@ pub enum Value {
 
     Pointer(usize),
     Reference(Rc<Variable>),
-    MutableReference(Rc<MutableVariable>),
+    MutableReference(Rc<Variable>),
 }
 
 macro_rules! into_num_impl {
@@ -41,10 +41,10 @@ macro_rules! into_num_impl {
                     Value::F32(v) => *v as $ty,
                     Value::F64(v) => *v as $ty,
                     Value::Pointer(v) => *v as $ty,
-                    Value::Reference(v) => v.inside_value().into(),
+                    Value::Reference(v) => v.inside_ref().into(),
+                    Value::MutableReference(v) => v.inside_ref().into(),
                     Value::Bool(_) => panic!("Cannot convert boolean to integer"),
-                    Value::String(_) => panic!("Cannot convert string to integer i8"),
-                    Value::MutableReference(_) => panic!("Cannot convert mutable reference to i8"),
+                    Value::String(_) => panic!("Cannot convert string to integer"),
                 }
             }
         }
