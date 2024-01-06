@@ -96,6 +96,30 @@ impl Default for VM<'_> {
     }
 }
 
+macro_rules! binary_operation {
+    ($self: expr, $operand: tt) => {{
+        let a = $self.stack.pop();
+        let b = $self.stack.pop();
+
+        match (a, b) {
+            (Value::I8(a), Value::I8(b)) => $self.stack.push(Value::I8(b $operand a)),
+            (Value::I16(a), Value::I16(b)) => $self.stack.push(Value::I16(b $operand a)),
+            (Value::I32(a), Value::I32(b)) => $self.stack.push(Value::I32(b $operand a)),
+            (Value::I64(a), Value::I64(b)) => $self.stack.push(Value::I64(b $operand a)),
+
+            (Value::U8(a), Value::U8(b)) => $self.stack.push(Value::U8(b $operand a)),
+            (Value::U16(a), Value::U16(b)) => $self.stack.push(Value::U16(b $operand a)),
+            (Value::U32(a), Value::U32(b)) => $self.stack.push(Value::U32(b $operand a)),
+            (Value::U64(a), Value::U64(b)) => $self.stack.push(Value::U64(b $operand a)),
+
+            (Value::F32(a), Value::F32(b)) => $self.stack.push(Value::F32(b $operand a)),
+            (Value::F64(a), Value::F64(b)) => $self.stack.push(Value::F64(b $operand a)),
+
+            (a, b) => panic!("Cannot perform binary operation on non-numeric and mixed values. Got {a:?} and {b:?}"),
+        }
+    }}
+}
+
 impl<'stack> VM<'stack> {
     pub fn run(&mut self) -> Result<()> {
         if self.ip >= self.program.len() {
@@ -148,31 +172,11 @@ impl<'stack> VM<'stack> {
                     *variable.borrow_mut() = value;
                 }
 
-                Instruction::Add => {
-                    let a = self.stack.pop();
-                    let b = self.stack.pop();
-                    self.stack.push(Value::I32(a.as_i32() + b.as_i32()));
-                }
-                Instruction::Subtract => {
-                    let a = self.stack.pop();
-                    let b = self.stack.pop();
-                    self.stack.push(Value::I32(a.as_i32() - b.as_i32()));
-                }
-                Instruction::Multiply => {
-                    let a = self.stack.pop();
-                    let b = self.stack.pop();
-                    self.stack.push(Value::I32(a.as_i32() * b.as_i32()));
-                }
-                Instruction::Divide => {
-                    let a = self.stack.pop();
-                    let b = self.stack.pop();
-                    self.stack.push(Value::I32(a.as_i32() / b.as_i32()));
-                }
-                Instruction::Modulo => {
-                    let a = self.stack.pop();
-                    let b = self.stack.pop();
-                    self.stack.push(Value::I32(a.as_i32() % b.as_i32()));
-                }
+                Instruction::Add => binary_operation!(self, +),
+                Instruction::Subtract => binary_operation!(self, -),
+                Instruction::Multiply => binary_operation!(self, *),
+                Instruction::Divide => binary_operation!(self, /),
+                Instruction::Modulo => binary_operation!(self, %),
 
                 Instruction::JumpAbsolute => {
                     let ip = self.stack.pop();
