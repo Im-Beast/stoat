@@ -82,4 +82,32 @@ impl Value {
             _ => panic!("Cannot convert non-strings to string"),
         }
     }
+
+    pub fn inside_cloned(&self) -> Value {
+        match self {
+            Self::Reference(v) => match v.as_ref() {
+                Variable::Mutable(v) => v.as_ref().inside_cloned(),
+                Variable::Immutable(v) => v.as_ref().inside_cloned(),
+            },
+            Self::MutableReference(v) => match v.as_ref() {
+                Variable::Mutable(v) => v.as_ref().inside_cloned(),
+                _ => unreachable!(),
+            },
+            _ => self.clone(),
+        }
+    }
+
+    pub fn inside_ref(&self) -> &Value {
+        match self {
+            Self::Reference(v) => match v.as_ref() {
+                Variable::Mutable(v) => v.as_ref().inside_ref(),
+                Variable::Immutable(v) => v.as_ref().inside_ref(),
+            },
+            Self::MutableReference(v) => match v.as_ref() {
+                Variable::Mutable(v) => v.as_ref().inside_ref(),
+                _ => unreachable!(),
+            },
+            _ => self,
+        }
+    }
 }

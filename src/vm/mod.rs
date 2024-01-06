@@ -114,27 +114,18 @@ impl Default for VM<'_> {
 }
 
 macro_rules! deref {
-    ($value: expr) => {{
-        match $value {
-            Value::Reference(v) => v.inside(),
-            Value::MutableReference(v) => v.inside(),
-            v => v,
-        }
-    }};
-    (ref; $value: expr) => {{
-        match $value {
-            Value::Reference(v) => v.inside_ref(),
-            Value::MutableReference(v) => v.inside_ref(),
-            v => v,
-        }
-    }};
     (cloned; $value: expr) => {{
         match $value {
-            Value::Reference(v) => v.inside_cloned(),
-            Value::MutableReference(v) => v.inside_cloned(),
+            v @ Value::Reference(_) | v @ Value::MutableReference(_) => v.inside_cloned(),
             v => v,
         }
     }};
+    (ref; $value: expr) => {
+        match &$value {
+            v @ Value::Reference(_) | v @ Value::MutableReference(_) => v.inside_ref(),
+            ref v => v,
+        }
+    };
 }
 
 macro_rules! binary_operation {
