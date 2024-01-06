@@ -90,7 +90,7 @@ pub fn vm_test() {
 }
 
 struct VM<'stack> {
-    iterner: Interner,
+    interner: Interner,
 
     variables: Vec<Rc<Variable>>, // <StringId, Variable>
     labels: Vec<usize>,           // <StringId, InstructionIndex>
@@ -103,7 +103,7 @@ struct VM<'stack> {
 impl Default for VM<'_> {
     fn default() -> Self {
         Self {
-            iterner: Interner::default(),
+            interner: Interner::default(),
             variables: Vec::new(),
             labels: Vec::new(),
             ip: 0,
@@ -243,8 +243,11 @@ impl<'stack> VM<'stack> {
 
     pub fn push_variable(&mut self, interned: StringID, variable: Variable) -> StringID {
         // Make sure we have enough space
-        self.variables.resize(interned + 1, Variable::default());
-        self.variables[interned] = variable;
+        if self.variables.len() <= interned {
+            self.variables
+                .resize(interned + 1, Rc::new(Variable::default()));
+        }
+        self.variables[interned] = Rc::new(variable);
         interned
     }
 
@@ -254,11 +257,12 @@ impl<'stack> VM<'stack> {
             .expect("Attempted to get a variable that does not exist.")
     }
 
-    pub fn label(&mut self, name: &str) -> StringID {
-        let interned = self.iterner.intern(name);
-        // Make sure we have enough space
-        self.labels.resize(interned, 0);
-        self.labels[interned] = self.ip;
+    pub fn label_name(&mut self, name: &str, ip: usize) -> StringID {
+        let interned = self.interner.intern(name);
+        if self.labels.len() <= interned {
+            self.labels.resize(interned + 1, 0);
+        }
+        self.labels[interned] = ip;
         interned
     }
 
@@ -267,7 +271,7 @@ impl<'stack> VM<'stack> {
     }
 
     pub fn jump_name(&mut self, name: &str) {
-        let interned = self.iterner.intern(name);
+        let interned = self.interner.intern(name);
         self.ip = self.labels[interned];
     }
 }
