@@ -4,7 +4,7 @@ use clap::{arg, Command};
 
 mod run;
 
-use crate::cli::run::run_file;
+use crate::{cli::run::run_file, vm::vm_test};
 
 pub fn cli() -> Command {
     Command::new("stoat")
@@ -20,12 +20,21 @@ pub fn cli() -> Command {
                 .arg_required_else_help(false)
                 .about("Run desired file"),
         )
+        .subcommand(
+            Command::new("vm_test")
+                .about("Run VM test")
+                .arg_required_else_help(false),
+        )
 }
 
 pub fn parse_cli() -> ExitCode {
     let matches = cli().get_matches();
 
     match matches.subcommand() {
+        Some(("vm_test", _)) => {
+            vm_test();
+            ExitCode::SUCCESS
+        }
         Some(("run", args)) => {
             let module_path = args.get_one::<String>("FILE_PATH").expect("Required");
             let debug = args.get_one::<bool>("debug").unwrap_or(&false);
