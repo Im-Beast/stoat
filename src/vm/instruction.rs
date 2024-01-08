@@ -8,6 +8,7 @@ pub enum Instruction {
 
     Ref,
     Clone,
+    Duplicate,
 
     DeclareVariable,
 
@@ -22,6 +23,9 @@ pub enum Instruction {
     Jump,
     JumpAbsolute,
     JumpIfEqual,
+
+    Call,
+    Return,
 
     Compare,
 

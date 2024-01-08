@@ -6,6 +6,9 @@ use miette::{bail, Result};
 mod stack;
 use stack::Stack;
 
+mod call_frame;
+use call_frame::CallFrame;
+
 mod instruction;
 use instruction::Instruction;
 
@@ -93,6 +96,70 @@ pub fn vm_test() {
         ],
     );
 
+    /*
+       Program for testing function calls
+
+       let a = interner.intern("a");
+       let b = interner.intern("b");
+       let c = interner.intern("c");
+       let multiply = interner.intern("multiply");
+       let square = interner.intern("square");
+
+       let program = Program::new(
+           interner,
+           vec![
+               // a = 5
+               // b = 3
+               // c = multiply(a, b)
+               // c = square(c)
+               // print(c)
+
+               // a = 5
+               Instruction::Push(Value::I64(5)),
+               Instruction::Push(Value::Pointer(a)),
+               Instruction::DeclareVariable,
+               // b = 3
+               Instruction::Push(Value::I64(3)),
+               Instruction::Push(Value::Pointer(b)),
+               Instruction::DeclareVariable,
+               // c = multiply(a, b)
+               Instruction::Push(Value::Pointer(a)),
+               Instruction::Clone,
+               Instruction::Push(Value::Pointer(b)),
+               Instruction::Ref,
+               Instruction::Push(Value::Pointer(multiply)), // label
+               Instruction::Call,
+               Instruction::Push(Value::Pointer(c)),
+               Instruction::DeclareVariable,
+               // c = square(c)
+               Instruction::Push(Value::Pointer(c)),
+               Instruction::Ref,
+               Instruction::Push(Value::Pointer(square)), // label
+               Instruction::Call,
+               Instruction::Push(Value::Pointer(c)),
+               Instruction::Assign,
+               // print(c)
+               Instruction::Push(Value::Pointer(c)),
+               Instruction::Ref,
+               Instruction::Print,
+               // break out of main
+               Instruction::Return,
+               // multiply(a, b):
+               // return a * b
+               Instruction::Multiply,
+               Instruction::Return,
+               // square(a):
+               // return a * a
+               Instruction::Duplicate,
+               Instruction::Multiply,
+               Instruction::Return,
+           ],
+       );
+
+           vm.label(multiply, 24);
+           vm.label(square, 26);
+    */
+
     let mut vm = VM::new(program);
 
     vm.label(fib, 12);
@@ -105,6 +172,7 @@ macro_rules! binary_operation {
     ($self: expr, $operand: tt) => {{
         let a = $self.stack.pop();
         let b = $self.stack.pop();
+
 
         match (a.as_ref(), b.as_ref()) {
             (Value::I8(a), Value::I8(b))   => $self.stack.push(Value::I8(b $operand a)),
@@ -125,44 +193,26 @@ macro_rules! binary_operation {
     }}
 }
 
-// TODO: Calls
-#[derive(Debug, Clone, Copy)]
-struct CallFrame {
-    arity: u8,
-    return_pointer: usize,
-}
-
-impl CallFrame {
-    pub fn new(arity: u8, return_pointer: usize) -> Self {
-        Self {
-            arity,
-            return_pointer,
-        }
-    }
-}
-
 struct VM<'stack> {
+    labels: Vec<usize>, // InternedString -> InstructionPointer
+
+    call_stack: Vec<CallFrame>,
+
     program: Program,
-
-    variables: Vec<InternedString>, // InternedString -> InstructionIndex
-    labels: Vec<InternedString>,    // InternedString -> InstructionIndex
-
-    ip: usize,
-    call_stack: Stack<'stack, CallFrame>,
     stack: Stack<'stack, Value>,
+    ip: usize,
 }
 
 impl<'stack> VM<'stack> {
     pub fn new(program: Program) -> Self {
         Self {
-            variables: Vec::new(),
             labels: Vec::new(),
 
-            ip: 0,
-            stack: Stack::default(),
-            call_stack: Stack::from([CallFrame::new(0, program.len())]),
+            call_stack: Vec::from([CallFrame::new(program.len())]),
 
             program,
+            stack: Stack::default(),
+            ip: 0,
         }
     }
 
@@ -182,15 +232,20 @@ impl<'stack> VM<'stack> {
                 }
 
                 Instruction::Ref => {
-                    let pointer = self.stack.pop();
-                    let pointer = pointer.as_usize();
-                    let value = self.get_variable(pointer);
+                    let pointer = self.stack.pop().as_usize();
+                    let value = self.get_variable_deep(pointer).expect("Variable not found");
                     self.stack.push_ref(value)
                 }
                 Instruction::Clone => {
-                    let pointer = self.stack.pop();
-                    let value = self.get_variable(pointer.as_usize());
+                    let pointer = self.stack.pop().as_usize();
+                    let value = self.get_variable_deep(pointer).expect("Variable not found");
                     self.stack.push(value.clone());
+                }
+                Instruction::Duplicate => {
+                    let value = self.stack.pop();
+                    let cloned = value.as_ref().clone();
+                    self.stack.push_cow(value);
+                    self.stack.push(cloned);
                 }
 
                 Instruction::DeclareVariable => {
@@ -200,10 +255,13 @@ impl<'stack> VM<'stack> {
                 }
 
                 Instruction::Assign => {
-                    let pointer = self.stack.pop();
+                    let name = self.stack.pop();
                     let value = self.stack.pop();
 
-                    let ip = self.variables[pointer.as_usize()];
+                    let ip = *self
+                        .current_frame_mut()
+                        .get_variable_pointer(name.as_usize())
+                        .expect("Variable not found");
 
                     let variable = self.stack.get_mut(ip);
                     *variable = value;
@@ -216,8 +274,8 @@ impl<'stack> VM<'stack> {
                 Instruction::Modulo => binary_operation!(self, %),
 
                 Instruction::Jump => {
-                    let pointer = self.stack.pop();
-                    self.jump(pointer.as_usize());
+                    let label = self.stack.pop();
+                    self.jump(label.as_usize());
                 }
                 Instruction::JumpAbsolute => {
                     let ip = self.stack.pop();
@@ -233,6 +291,15 @@ impl<'stack> VM<'stack> {
                     if a == b {
                         self.jump(interned_label.as_usize());
                     }
+                }
+
+                Instruction::Call => {
+                    let label = self.stack.pop();
+                    self.call(label.as_usize());
+                }
+                Instruction::Return => {
+                    let frame = self.call_stack.pop().expect("Call stack is empty");
+                    self.ip = frame.return_pointer;
                 }
 
                 Instruction::Compare => {
@@ -254,18 +321,47 @@ impl<'stack> VM<'stack> {
         Ok(())
     }
 
-    pub fn push_variable(&mut self, interned: usize, value: Cow<'stack, Value>) -> usize {
-        // Make sure we have enough space
-        if self.variables.len() <= interned {
-            self.variables.resize(interned + 1, usize::MAX);
-        }
-        self.variables[interned] = self.stack.len();
-        self.stack.push_cow(value);
-        interned
+    pub fn current_frame(&self) -> &CallFrame {
+        self.call_stack.last().expect("Call stack is empty")
     }
 
-    pub fn get_variable(&self, interned: usize) -> &'stack Value {
-        let ip = self.variables[interned];
+    pub fn current_frame_mut(&mut self) -> &mut CallFrame {
+        self.call_stack.last_mut().expect("Call stack is empty")
+    }
+
+    pub fn call(&mut self, label: InternedString) {
+        self.call_stack.push(CallFrame::new(self.ip));
+        self.jump(label);
+    }
+
+    pub fn push_variable(&mut self, name: InternedString, value: Cow<'stack, Value>) {
+        let len = self.stack.len();
+        let frame = self.current_frame_mut();
+        frame.set_variable_pointer(name, len);
+        self.stack.push_cow(value);
+    }
+
+    pub fn get_variable_deep(&self, name: InternedString) -> Option<&'stack Value> {
+        for frame in self.call_stack.iter().rev() {
+            if let Some(value) = self.get_variable_from(frame, name) {
+                return Some(value);
+            }
+        }
+        None
+    }
+
+    pub fn get_variable_from(
+        &self,
+        frame: &CallFrame,
+        name: InternedString,
+    ) -> Option<&'stack Value> {
+        let ip = frame.get_variable_pointer(name);
+
+        let ip = match ip {
+            Some(ip) => *ip,
+            None => return None,
+        };
+
         // SAFETY: This is safe for a properly constructed program
         // where all variables are declared before they are used
         // and are not popped from the stack.
@@ -274,22 +370,22 @@ impl<'stack> VM<'stack> {
                 Cow::Borrowed(value) => value,
                 Cow::Owned(value) => value,
             };
-            std::mem::transmute::<&'_ Value, &'stack Value>(value)
+            Some(std::mem::transmute_copy::<&Value, &'stack Value>(&value))
         }
     }
 
-    pub fn label(&mut self, interned: usize, ip: usize) {
-        if self.labels.len() <= interned {
-            self.labels.resize(interned + 1, 0);
+    pub fn label(&mut self, label: InternedString, ip: usize) {
+        if self.labels.len() <= label {
+            self.labels.resize(label + 1, 0);
         }
-        self.labels[interned] = ip;
+        self.labels[label] = ip;
+    }
+
+    pub fn jump(&mut self, label: InternedString) {
+        self.ip = self.labels[label];
     }
 
     pub fn jump_abs(&mut self, ip: usize) {
         self.ip = ip;
-    }
-
-    pub fn jump(&mut self, interned: usize) {
-        self.ip = self.labels[interned];
     }
 }
