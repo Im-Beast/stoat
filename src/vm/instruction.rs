@@ -9,8 +9,7 @@ pub enum Instruction {
     Ref,
     Clone,
 
-    DeclareLet,
-    DeclareLetMut,
+    DeclareVariable,
 
     Assign,
 
@@ -22,7 +21,6 @@ pub enum Instruction {
 
     Jump,
     JumpAbsolute,
-    JumpName,
     JumpIfEqual,
 
     Compare,

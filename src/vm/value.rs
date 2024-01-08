@@ -1,7 +1,3 @@
-use std::rc::Rc;
-
-use super::variable::Variable;
-
 #[derive(Debug, Clone)]
 pub enum Value {
     I8(i8),
@@ -21,8 +17,6 @@ pub enum Value {
     String(String),
 
     Pointer(usize),
-    Reference(Rc<Variable>),
-    MutableReference(Rc<Variable>),
 }
 
 impl PartialEq for Value {
@@ -45,8 +39,6 @@ impl PartialEq for Value {
             (Self::String(a), Self::String(b)) => a == b,
 
             (Self::Pointer(a), Self::Pointer(b)) => a == b,
-            (Self::Reference(a), Self::Reference(b)) => Rc::ptr_eq(a, b),
-            (Self::MutableReference(a), Self::MutableReference(b)) => Rc::ptr_eq(a, b),
 
             _ => false,
         }
@@ -125,7 +117,6 @@ macro_rules! into_num_impl {
                     Value::Pointer(v) => *v as $ty,
                     Value::Bool(_) => panic!("Cannot convert boolean to integer"),
                     Value::String(_) => panic!("Cannot convert string to integer"),
-                    v => v.inside_ref().into(),
                 }
             }
         }
@@ -161,34 +152,6 @@ impl Value {
         match self {
             Self::String(v) => v,
             _ => panic!("Cannot convert non-strings to string"),
-        }
-    }
-
-    pub fn inside_cloned(&self) -> Value {
-        match self {
-            Self::Reference(v) => match v.as_ref() {
-                Variable::Mutable(v) => v.as_ref().inside_cloned(),
-                Variable::Immutable(v) => v.as_ref().inside_cloned(),
-            },
-            Self::MutableReference(v) => match v.as_ref() {
-                Variable::Mutable(v) => v.as_ref().inside_cloned(),
-                _ => unreachable!(),
-            },
-            _ => self.clone(),
-        }
-    }
-
-    pub fn inside_ref(&self) -> &Value {
-        match self {
-            Self::Reference(v) => match v.as_ref() {
-                Variable::Mutable(v) => v.as_ref().inside_ref(),
-                Variable::Immutable(v) => v.as_ref().inside_ref(),
-            },
-            Self::MutableReference(v) => match v.as_ref() {
-                Variable::Mutable(v) => v.as_ref().inside_ref(),
-                _ => unreachable!(),
-            },
-            _ => self,
         }
     }
 }
