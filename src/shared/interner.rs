@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-pub type StringID = usize;
+pub type InternedString = usize;
 
 #[derive(Debug, Clone)]
 pub struct Interner {
-    map: HashMap<String, StringID>,
+    map: HashMap<String, usize>,
     strings: Vec<String>,
 }
 
@@ -18,7 +18,7 @@ impl Default for Interner {
 }
 
 impl Interner {
-    pub fn intern(&mut self, name: &str) -> StringID {
+    pub fn intern(&mut self, name: &str) -> InternedString {
         if let Some(id) = self.map.get(name) {
             return *id;
         }
@@ -29,7 +29,7 @@ impl Interner {
         id
     }
 
-    pub fn intern_string(&mut self, name: String) -> StringID {
+    pub fn intern_string(&mut self, name: String) -> InternedString {
         if let Some(id) = self.map.get(&*name) {
             return *id;
         }
@@ -40,7 +40,7 @@ impl Interner {
         id
     }
 
-    pub fn get(&self, id: StringID) -> Option<&String> {
+    pub fn get(&self, id: InternedString) -> Option<&String> {
         self.strings.get(id)
     }
 }
