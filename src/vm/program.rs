@@ -1,5 +1,5 @@
-use crate::vm::Instruction;
-use crate::vm::Interner;
+use crate::instruction::Instruction;
+use shared::interner::Interner;
 
 pub struct Program {
     pub instructions: Vec<Instruction>,

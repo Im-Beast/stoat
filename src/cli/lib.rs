@@ -4,7 +4,7 @@ use clap::{arg, Command};
 
 mod run;
 
-use crate::{cli::run::run_file, vm::vm_test};
+use crate::run::run_file;
 
 pub fn cli() -> Command {
     Command::new("stoat")
@@ -32,7 +32,7 @@ pub fn parse_cli() -> ExitCode {
 
     match matches.subcommand() {
         Some(("vm_test", _)) => {
-            vm_test();
+            vm::vm_test();
             ExitCode::SUCCESS
         }
         Some(("run", args)) => {

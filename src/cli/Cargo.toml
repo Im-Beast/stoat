@@ -1,0 +1,20 @@
+[package]
+name = "stoat_cli"
+description = "CLI for Stoat"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+stoat_vm = { path = "../vm" }
+stoat_lexer = { path = "../lexer" }
+stoat_shared = { path = "../shared" }
+clap = "4.4.8"
+miette.workspace = true
+
+
+[lib]
+name = "cli"
+path = "lib.rs"

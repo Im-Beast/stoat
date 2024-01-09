@@ -1,0 +1,15 @@
+[package]
+name = "stoat"
+description = "All of stoat goodies"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "stoat"
+path = "main.rs"
+
+[dependencies]
+stoat_cli = { path = "./cli" }

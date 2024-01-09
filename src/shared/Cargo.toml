@@ -1,0 +1,12 @@
+[package]
+name = "stoat_shared"
+description = "Shared utiltiies between Stoat crates"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "shared"
+path = "lib.rs"

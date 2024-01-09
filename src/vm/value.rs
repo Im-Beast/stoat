@@ -126,12 +126,6 @@ macro_rules! into_num_impl {
                 self.$conv_name()
             }
         }
-
-        impl Into<$ty> for Value {
-            fn into(self) -> $ty {
-                (&self).into()
-            }
-        }
     };
 }
 

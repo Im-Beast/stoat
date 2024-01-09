@@ -1,0 +1,17 @@
+[package]
+name = "stoat_lexer"
+description = "A lexer used by Stoat"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "lexer"
+path = "lib.rs"
+
+[dependencies]
+stoat_shared = { path = "../shared" }
+miette.workspace = true
+thiserror.workspace = true

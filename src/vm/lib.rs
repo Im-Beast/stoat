@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
-use crate::shared::interner::{InternedString, Interner};
 use miette::{bail, Result};
+use shared::interner::{InternedString, Interner};
 
 mod stack;
 use stack::Stack;
@@ -34,7 +34,7 @@ pub fn vm_test() {
     let program = Program::new(
         interner,
         vec![
-            // fibonacci sequence till 30th number
+            // fibonacci sequence till amount–th number
             // a = 0
             Instruction::Push(Value::I64(0)),
             Instruction::Push(Value::Pointer(a)),
@@ -52,7 +52,7 @@ pub fn vm_test() {
             Instruction::Push(Value::Pointer(temp)),
             Instruction::DeclareVariable,
             // loop:
-            // if i == 30 jump to end
+            // if i == amount jump to end
             Instruction::Push(Value::Pointer(i)),
             Instruction::Ref,
             Instruction::Push(Value::I64(amount)),
@@ -165,7 +165,10 @@ pub fn vm_test() {
     vm.label(fib, 12);
     vm.label(end, 42);
 
-    vm.run().unwrap();
+    for _ in 0..100_000 {
+        vm.ip = 0;
+        vm.run().unwrap();
+    }
 }
 
 macro_rules! binary_operation {
@@ -173,14 +176,13 @@ macro_rules! binary_operation {
         let a = $self.stack.pop();
         let b = $self.stack.pop();
 
-
         match (a.as_ref(), b.as_ref()) {
-            (Value::I8(a), Value::I8(b))   => $self.stack.push(Value::I8(b $operand a)),
+            (Value::I8(a), Value::I8(b)) => $self.stack.push(Value::I8(b $operand a)),
             (Value::I16(a), Value::I16(b)) => $self.stack.push(Value::I16(b $operand a)),
             (Value::I32(a), Value::I32(b)) => $self.stack.push(Value::I32(b $operand a)),
             (Value::I64(a), Value::I64(b)) => $self.stack.push(Value::I64(b $operand a)),
 
-            (Value::U8(a), Value::U8(b))   => $self.stack.push(Value::U8(b $operand a)),
+            (Value::U8(a), Value::U8(b)) => $self.stack.push(Value::U8(b $operand a)),
             (Value::U16(a), Value::U16(b)) => $self.stack.push(Value::U16(b $operand a)),
             (Value::U32(a), Value::U32(b)) => $self.stack.push(Value::U32(b $operand a)),
             (Value::U64(a), Value::U64(b)) => $self.stack.push(Value::U64(b $operand a)),
@@ -188,7 +190,7 @@ macro_rules! binary_operation {
             (Value::F32(a), Value::F32(b)) => $self.stack.push(Value::F32(b $operand a)),
             (Value::F64(a), Value::F64(b)) => $self.stack.push(Value::F64(b $operand a)),
 
-            (a, b) => panic!("Cannot perform binary operation on non-numeric and mixed values. Got {a:?} and {b:?}"),
+            (a, b) => panic!("Cannot perform binary operation on non-numeric and/or mixed values. Got {a:?} and {b:?}"),
         }
     }}
 }

@@ -1,4 +1,4 @@
-use crate::shared::interner::InternedString;
+use shared::interner::InternedString;
 
 #[derive(Debug, Clone)]
 pub struct CallFrame {

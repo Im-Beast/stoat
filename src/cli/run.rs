@@ -1,6 +1,7 @@
 use miette::{bail, Result};
 
-use crate::{lexer::Lexer, shared::interner::Interner};
+use lexer::Lexer;
+use shared::interner::Interner;
 
 pub fn run_file(file_path: &str, debug: bool) -> Result<()> {
     let code = std::fs::read_to_string(file_path);

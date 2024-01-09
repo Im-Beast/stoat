@@ -1,7 +1,6 @@
 use super::value::Value;
 
-#[derive(Debug)]
-#[repr(u8)]
+#[derive(Debug, Clone)]
 pub enum Instruction {
     Push(Value),
     Pop,

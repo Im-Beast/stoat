@@ -3,12 +3,25 @@ import builtins::{
 };
 
 import ./example_code.st::{
-  dog
+  dog,
+  nested_module::{
+    cat
+  }
 };
-''
+
 export fun dog(i: i32) -> i32 {
   return i * 2;
 }
+
+export mod nested_module {
+  export fun cat(i: i32) -> i32 {
+    return i * 3;
+  }
+}
+
+let char = ' ';
+let err1 = ';
+let err2'
 
 let a: i32 = 5;
 let b = 5i32;

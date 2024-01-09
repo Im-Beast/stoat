@@ -1,7 +1,7 @@
 mod errors;
 use self::errors::{LexerError, UnexpectedCharacter, UnexpectedEOF, UnsupportedNumberSuffix};
 
-use crate::{shared::span::Span, span};
+use shared::{span, span::Span};
 
 macro_rules! dbg_line {
     () => {
@@ -123,8 +123,8 @@ pub enum Token {
 }
 
 #[derive(Debug, Clone)]
-pub struct Lexer<'a> {
-    code: &'a str,
+pub struct Lexer<'src> {
+    code: &'src str,
     chars: Box<[char]>,
     cursor: usize,
     errors: Vec<LexerError>,
@@ -156,8 +156,8 @@ macro_rules! string_with_match_pattern {
     }};
 }
 
-impl<'a> Lexer<'a> {
-    pub fn new(code: &'a str) -> Self {
+impl<'src> Lexer<'src> {
+    pub fn new(code: &'src str) -> Self {
         Lexer {
             code,
             chars: code.chars().collect(),
