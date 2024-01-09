@@ -31,10 +31,6 @@ pub fn parse_cli() -> ExitCode {
     let matches = cli().get_matches();
 
     match matches.subcommand() {
-        Some(("vm_test", _)) => {
-            vm::vm_test();
-            ExitCode::SUCCESS
-        }
         Some(("run", args)) => {
             let module_path = args.get_one::<String>("FILE_PATH").expect("Required");
             let debug = args.get_one::<bool>("debug").unwrap_or(&false);

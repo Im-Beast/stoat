@@ -1,6 +1,7 @@
 use crate::instruction::Instruction;
 use shared::interner::Interner;
 
+#[derive(Debug)]
 pub struct Program {
     pub instructions: Vec<Instruction>,
     pub interner: Interner,
