@@ -15,6 +15,7 @@ pub enum Value {
 
     Bool(bool),
     String(String),
+    Char(char),
 
     Pointer(usize),
 }
@@ -115,6 +116,7 @@ macro_rules! into_num_impl {
                     Value::F32(v) => *v as $ty,
                     Value::F64(v) => *v as $ty,
                     Value::Pointer(v) => *v as $ty,
+                    Value::Char(_) => panic!("Cannot convert char to integer"),
                     Value::Bool(_) => panic!("Cannot convert boolean to integer"),
                     Value::String(_) => panic!("Cannot convert string to integer"),
                 }
