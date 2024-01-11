@@ -1,15 +1,20 @@
+use miette::SourceSpan;
+
 #[derive(Clone, Copy, Debug)]
 pub struct Span {
     pub start: usize,
     pub length: usize,
 }
 
-impl Into<Span> for (usize, usize) {
-    fn into(self) -> Span {
-        Span {
-            start: self.0,
-            length: self.1,
-        }
+impl From<(usize, usize)> for Span {
+    fn from((start, length): (usize, usize)) -> Self {
+        Self { start, length }
+    }
+}
+
+impl From<&Span> for SourceSpan {
+    fn from(span: &Span) -> Self {
+        (span.start, span.length).into()
     }
 }
 
