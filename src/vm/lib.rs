@@ -3,19 +3,19 @@ use std::borrow::Cow;
 use miette::{bail, Result};
 use shared::interner::InternedString;
 
-mod stack;
+pub mod stack;
 use stack::Stack;
 
-mod call_frame;
+pub mod call_frame;
 use call_frame::CallFrame;
 
-mod instruction;
+pub mod instruction;
 use instruction::Instruction;
 
-mod value;
+pub mod value;
 use value::Value;
 
-mod program;
+pub mod program;
 use program::Program;
 
 macro_rules! binary_operation {
