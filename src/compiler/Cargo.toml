@@ -1,21 +1,19 @@
 [package]
-name = "stoat_cli"
-description = "CLI for Stoat"
+name = "stoat_compiler"
+description = "A compiler for Stoat"
 edition.workspace = true
 version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
 
-[dependencies]
-stoat_vm = { path = "../vm" }
-stoat_lexer = { path = "../lexer" }
-stoat_shared = { path = "../shared" }
-stoat_compiler = { path = "../compiler" }
-clap = "4.4.8"
-miette.workspace = true
-
-
 [lib]
-name = "cli"
+name = "compiler"
 path = "lib.rs"
+
+[dependencies]
+stoat_shared = { path = "../shared" }
+stoat_lexer = { path = "../lexer" }
+stoat_vm = { path = "../vm" }
+miette.workspace = true
+thiserror.workspace = true

@@ -318,9 +318,21 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "miette",
+ "stoat_compiler",
  "stoat_lexer",
  "stoat_shared",
  "stoat_vm",
+]
+
+[[package]]
+name = "stoat_compiler"
+version = "0.1.0"
+dependencies = [
+ "miette",
+ "stoat_lexer",
+ "stoat_shared",
+ "stoat_vm",
+ "thiserror",
 ]
 
 [[package]]
@@ -335,6 +347,9 @@ dependencies = [
 [[package]]
 name = "stoat_shared"
 version = "0.1.0"
+dependencies = [
+ "miette",
+]
 
 [[package]]
 name = "stoat_vm"

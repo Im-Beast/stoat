@@ -7,7 +7,14 @@ repository = "https://github.com/Im-Beast/stoat"
 license = "MIT"
 
 [workspace]
-members = ["src/", "src/cli", "src/lexer", "src/vm", "src/shared"]
+members = [
+	"src/",
+	"src/shared",
+	"src/cli",
+	"src/lexer",
+	"src/vm",
+	"src/compiler",
+]
 resolver = "2"
 
 [workspace.dependencies]
