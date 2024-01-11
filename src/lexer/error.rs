@@ -27,7 +27,7 @@ impl Into<ErrReport> for LexerError {
 #[derive(Error, Debug, Diagnostic, Clone)]
 #[error("unexpected-character")]
 #[diagnostic(
-	code(parser::unexpected_character),
+	code(lexer::unexpected_character),
 	help("[{}] Expected {:?}, got {:?} instead", self.dbg_line, self.expected, self.actual),
 )]
 pub struct UnexpectedCharacter {
@@ -43,7 +43,7 @@ pub struct UnexpectedCharacter {
 #[derive(Error, Debug, Diagnostic, Clone)]
 #[error("unexpected-eof")]
 #[diagnostic(
-	code(parser::unexpected_eof),
+	code(lexer::unexpected_eof),
 	help("[{}] Expected {}, got EOF instead", self.dbg_line, self.expected),
 )]
 pub struct UnexpectedEOF {
@@ -59,7 +59,7 @@ pub struct UnexpectedEOF {
 #[derive(Error, Debug, Diagnostic, Clone)]
 #[error("unsupported-number-suffix")]
 #[diagnostic(
-    code(parser::unsupported_number_suffix),
+    code(lexer::unsupported_number_suffix),
     help("[{}] {:?} is not a valid number suffix", self.dbg_line, self.suffix),
 )]
 pub struct UnsupportedNumberSuffix {
