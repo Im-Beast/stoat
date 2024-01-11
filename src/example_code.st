@@ -24,6 +24,7 @@ let char = ' ';
 let a: i32 = 5;
 let b = 5i32;
 let mut c = 3;
+let float = 3.14159;
 c += 2;
 
 if a > b {

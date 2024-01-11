@@ -118,7 +118,6 @@ impl<'src> Lexer<'src> {
         }
     }
 
-    // TODO: Float
     pub fn lex_number(&mut self) -> Token {
         match self.peek_next(1) {
             Some('b') => self.lex_binary_number(),      // Binary
@@ -130,11 +129,24 @@ impl<'src> Lexer<'src> {
 
     pub fn lex_decimal_number(&mut self) -> Token {
         let start = self.cursor;
-        let string = string_with_match_pattern!(self, '0'..='9');
-        Token(
-            TokenKind::Integer(NumberPrefix::None, self.lex_number_suffix(), string),
-            span!(start, self.cursor),
-        )
+        let mut string = string_with_match_pattern!(self, '0'..='9');
+
+        match self.peek() {
+            Some('.') => {
+                self.cursor += 1;
+                string.push('.');
+                let string = string_with_match_pattern!(self, string, '0'..='9');
+
+                Token(
+                    TokenKind::Float(self.lex_number_suffix(), string),
+                    span!(start, self.cursor),
+                )
+            }
+            _ => Token(
+                TokenKind::Integer(NumberPrefix::None, self.lex_number_suffix(), string),
+                span!(start, self.cursor),
+            ),
+        }
     }
 
     pub fn lex_octal_number(&mut self) -> Token {
