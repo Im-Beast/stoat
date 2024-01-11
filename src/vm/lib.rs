@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use miette::{bail, Result};
-use shared::interner::InternedString;
+use shared::interner::{InternedString, Interner};
 
 pub mod stack;
 use stack::Stack;
@@ -44,6 +44,7 @@ macro_rules! binary_operation {
 
 #[derive(Debug)]
 struct VM<'stack> {
+    interner: Interner,
     labels: Vec<usize>, // InternedString -> InstructionPointer
 
     call_stack: Vec<CallFrame>,
@@ -54,8 +55,9 @@ struct VM<'stack> {
 }
 
 impl<'stack> VM<'stack> {
-    pub fn new(program: Program) -> Self {
+    pub fn new(program: Program, interner: Interner) -> Self {
         Self {
+            interner,
             labels: Vec::new(),
 
             call_stack: Vec::from([CallFrame::new(program.len())]),
@@ -259,71 +261,68 @@ mod tests {
 
         let amount = 91;
 
-        let program = Program::new(
-            interner,
-            vec![
-                // fibonacci sequence till amount–th number
-                // a = 0
-                Instruction::Push(Value::I64(0)),
-                Instruction::Push(Value::Pointer(a)),
-                Instruction::DeclareVariable,
-                // b = 1
-                Instruction::Push(Value::I64(1)),
-                Instruction::Push(Value::Pointer(b)),
-                Instruction::DeclareVariable,
-                // i = 0
-                Instruction::Push(Value::I64(0)),
-                Instruction::Push(Value::Pointer(i)),
-                Instruction::DeclareVariable,
-                // temp = 0
-                Instruction::Push(Value::I64(0)),
-                Instruction::Push(Value::Pointer(temp)),
-                Instruction::DeclareVariable,
-                // loop:
-                // if i == amount jump to end
-                Instruction::Push(Value::Pointer(i)),
-                Instruction::Ref,
-                Instruction::Push(Value::I64(amount)),
-                Instruction::Compare,
-                Instruction::Push(Value::I8(0)),
-                Instruction::Push(Value::Pointer(end)),
-                Instruction::JumpIfEqual,
-                // i += 1
-                Instruction::Push(Value::Pointer(i)),
-                Instruction::Ref,
-                Instruction::Push(Value::I64(1)),
-                Instruction::Add,
-                Instruction::Push(Value::Pointer(i)),
-                Instruction::Assign,
-                // temp = a
-                Instruction::Push(Value::Pointer(a)),
-                Instruction::Clone,
-                Instruction::Push(Value::Pointer(temp)),
-                Instruction::Assign,
-                // a = b
-                Instruction::Push(Value::Pointer(b)),
-                Instruction::Clone,
-                Instruction::Push(Value::Pointer(a)),
-                Instruction::Assign,
-                // b = b + temp
-                Instruction::Push(Value::Pointer(b)),
-                Instruction::Ref,
-                Instruction::Push(Value::Pointer(temp)),
-                Instruction::Ref,
-                Instruction::Add,
-                Instruction::Push(Value::Pointer(b)),
-                Instruction::Assign,
-                // goto loop
-                Instruction::Push(Value::Pointer(fib)),
-                Instruction::Jump,
-                // end:
-                // &b
-                Instruction::Push(Value::Pointer(b)),
-                Instruction::Ref,
-            ],
-        );
+        let program = Program::new(vec![
+            // fibonacci sequence till amount–th number
+            // a = 0
+            Instruction::Push(Value::I64(0)),
+            Instruction::Push(Value::Pointer(a)),
+            Instruction::DeclareVariable,
+            // b = 1
+            Instruction::Push(Value::I64(1)),
+            Instruction::Push(Value::Pointer(b)),
+            Instruction::DeclareVariable,
+            // i = 0
+            Instruction::Push(Value::I64(0)),
+            Instruction::Push(Value::Pointer(i)),
+            Instruction::DeclareVariable,
+            // temp = 0
+            Instruction::Push(Value::I64(0)),
+            Instruction::Push(Value::Pointer(temp)),
+            Instruction::DeclareVariable,
+            // loop:
+            // if i == amount jump to end
+            Instruction::Push(Value::Pointer(i)),
+            Instruction::Ref,
+            Instruction::Push(Value::I64(amount)),
+            Instruction::Compare,
+            Instruction::Push(Value::I8(0)),
+            Instruction::Push(Value::Pointer(end)),
+            Instruction::JumpIfEqual,
+            // i += 1
+            Instruction::Push(Value::Pointer(i)),
+            Instruction::Ref,
+            Instruction::Push(Value::I64(1)),
+            Instruction::Add,
+            Instruction::Push(Value::Pointer(i)),
+            Instruction::Assign,
+            // temp = a
+            Instruction::Push(Value::Pointer(a)),
+            Instruction::Clone,
+            Instruction::Push(Value::Pointer(temp)),
+            Instruction::Assign,
+            // a = b
+            Instruction::Push(Value::Pointer(b)),
+            Instruction::Clone,
+            Instruction::Push(Value::Pointer(a)),
+            Instruction::Assign,
+            // b = b + temp
+            Instruction::Push(Value::Pointer(b)),
+            Instruction::Ref,
+            Instruction::Push(Value::Pointer(temp)),
+            Instruction::Ref,
+            Instruction::Add,
+            Instruction::Push(Value::Pointer(b)),
+            Instruction::Assign,
+            // goto loop
+            Instruction::Push(Value::Pointer(fib)),
+            Instruction::Jump,
+            // end:
+            // &b
+            Instruction::Push(Value::Pointer(b)),
+            Instruction::Ref,
+        ]);
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new(program, interner);
 
         vm.label(fib, 12);
         vm.label(end, 42);
@@ -343,57 +342,54 @@ mod tests {
         let multiply = interner.intern("multiply");
         let square = interner.intern("square");
 
-        let program = Program::new(
-            interner,
-            vec![
-                // a = 5
-                // b = 3
-                // c = multiply(a, b)
-                // c = square(c)
-                // print(c)
+        let program = Program::new(vec![
+            // a = 5
+            // b = 3
+            // c = multiply(a, b)
+            // c = square(c)
+            // print(c)
 
-                // a = 5
-                Instruction::Push(Value::I64(5)),
-                Instruction::Push(Value::Pointer(a)),
-                Instruction::DeclareVariable,
-                // b = 3
-                Instruction::Push(Value::I64(3)),
-                Instruction::Push(Value::Pointer(b)),
-                Instruction::DeclareVariable,
-                // c = multiply(a, b)
-                Instruction::Push(Value::Pointer(a)),
-                Instruction::Clone,
-                Instruction::Push(Value::Pointer(b)),
-                Instruction::Ref,
-                Instruction::Push(Value::Pointer(multiply)), // label
-                Instruction::Call,
-                Instruction::Push(Value::Pointer(c)),
-                Instruction::DeclareVariable,
-                // c = square(c)
-                Instruction::Push(Value::Pointer(c)),
-                Instruction::Ref,
-                Instruction::Push(Value::Pointer(square)), // label
-                Instruction::Call,
-                Instruction::Push(Value::Pointer(c)),
-                Instruction::Assign,
-                // &c
-                Instruction::Push(Value::Pointer(c)),
-                Instruction::Ref,
-                // break out of main
-                Instruction::Return,
-                // multiply(a, b):
-                // return a * b
-                Instruction::Multiply,
-                Instruction::Return,
-                // square(a):
-                // return a * a
-                Instruction::Duplicate,
-                Instruction::Multiply,
-                Instruction::Return,
-            ],
-        );
+            // a = 5
+            Instruction::Push(Value::I64(5)),
+            Instruction::Push(Value::Pointer(a)),
+            Instruction::DeclareVariable,
+            // b = 3
+            Instruction::Push(Value::I64(3)),
+            Instruction::Push(Value::Pointer(b)),
+            Instruction::DeclareVariable,
+            // c = multiply(a, b)
+            Instruction::Push(Value::Pointer(a)),
+            Instruction::Clone,
+            Instruction::Push(Value::Pointer(b)),
+            Instruction::Ref,
+            Instruction::Push(Value::Pointer(multiply)), // label
+            Instruction::Call,
+            Instruction::Push(Value::Pointer(c)),
+            Instruction::DeclareVariable,
+            // c = square(c)
+            Instruction::Push(Value::Pointer(c)),
+            Instruction::Ref,
+            Instruction::Push(Value::Pointer(square)), // label
+            Instruction::Call,
+            Instruction::Push(Value::Pointer(c)),
+            Instruction::Assign,
+            // &c
+            Instruction::Push(Value::Pointer(c)),
+            Instruction::Ref,
+            // break out of main
+            Instruction::Return,
+            // multiply(a, b):
+            // return a * b
+            Instruction::Multiply,
+            Instruction::Return,
+            // square(a):
+            // return a * a
+            Instruction::Duplicate,
+            Instruction::Multiply,
+            Instruction::Return,
+        ]);
 
-        let mut vm = VM::new(program);
+        let mut vm = VM::new(program, interner);
 
         vm.label(multiply, 23);
         vm.label(square, 25);
