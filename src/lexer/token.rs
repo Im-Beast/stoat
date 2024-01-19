@@ -42,7 +42,7 @@ pub enum NumberSuffix {
     F64, // 69f64
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 #[repr(u8)]
 pub enum TokenKind {
     Garbage(Option<String>),

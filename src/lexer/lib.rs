@@ -1,4 +1,6 @@
 mod error;
+use std::collections::VecDeque;
+
 use error::{LexerError, UnexpectedCharacter, UnexpectedEOF, UnsupportedNumberSuffix};
 
 mod token;
@@ -16,7 +18,7 @@ pub struct Lexer<'src> {
 
 #[derive(Debug)]
 pub struct LexerResult {
-    pub tokens: Vec<Token>,
+    pub tokens: VecDeque<Token>,
     pub errors: Vec<LexerError>,
 }
 
@@ -51,10 +53,10 @@ impl<'src> Lexer<'src> {
     }
 
     pub fn lex(mut self) -> LexerResult {
-        let mut tokens = Vec::new();
+        let mut tokens = VecDeque::new();
 
         while let Some(token) = self.next() {
-            tokens.push(token);
+            tokens.push_back(token);
         }
 
         LexerResult {

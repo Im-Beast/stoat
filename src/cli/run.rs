@@ -1,7 +1,7 @@
 use miette::{bail, Result};
 
-use compiler::Compiler;
 use lexer::Lexer;
+use parser::Parser;
 
 pub fn run_file(file_path: &str, debug: bool) -> Result<()> {
     let code = std::fs::read_to_string(file_path);
@@ -26,13 +26,13 @@ pub fn run(code: &str, debug: bool) -> Result<()> {
         println!("Tokens:\n{:#?}", result.tokens);
     }
 
-    let compiler = Compiler::new(result.tokens, code);
-    let result = compiler.compile();
+    let parser = Parser::new(result.tokens, code);
+    let result = parser.parse();
     if !result.errors.is_empty() {
         for error in result.errors {
-            eprintln!("Lexing errors: \n{:?}", error.into_err_report());
+            eprintln!("Parsing errors: \n{:?}", error.into_err_report());
         }
-        bail!("Failed to lex the code");
+        bail!("Failed to parse the code");
     }
 
     Ok(())

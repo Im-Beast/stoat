@@ -1,9 +1,15 @@
 use miette::SourceSpan;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Copy, Debug)]
 pub struct Span {
     pub start: usize,
     pub length: usize,
+}
+
+impl Clone for Span {
+    fn clone(&self) -> Self {
+        *self
+    }
 }
 
 impl From<(usize, usize)> for Span {
