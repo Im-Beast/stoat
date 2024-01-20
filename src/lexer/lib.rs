@@ -116,6 +116,8 @@ impl<'src> Lexer<'src> {
             "match" => Token(TokenKind::Match, span),
             "import" => Token(TokenKind::Import, span),
             "export" => Token(TokenKind::Export, span),
+            "true" => Token(TokenKind::Boolean(true), span),
+            "false" => Token(TokenKind::Boolean(false), span),
             _ => Token(TokenKind::Identifier(string), span),
         }
     }
