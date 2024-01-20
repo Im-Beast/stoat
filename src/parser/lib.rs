@@ -14,7 +14,7 @@ mod statement;
 pub use statement::{Statement, VariableDeclaration};
 
 mod expression;
-pub use expression::{Block, Call, Expression, If};
+pub use expression::{Block, Call, Expression, If, PropertyAccess};
 
 mod ast;
 pub use ast::AST;
@@ -223,23 +223,14 @@ impl<'src> Parser<'src> {
         // Possible expressions:
         // value
         // variable_access
-        // expr (op expr)*;
-        // if cond { ...stmt[]; expr } else { ...stmt[]; expr };
-        // { ...stmt[]; expr };
+        // expr (op expr)*                                      (binary operation)
+        // expr.ident                                           (property access)
+        // if cond { ...stmt[]; expr } else { ...stmt[]; expr } (if expression)
+        // { ...stmt[]; expr }                                  (block)
 
         let mut expression_stack = Vec::new();
 
-        let token = peek_from!(
-            self,
-            [TokenKind::Identifier(_), TokenKind::If, value_pattern!()]
-        );
-        let expression = match token.0 {
-            TokenKind::If => Expression::If(self.parse_if_expression()?),
-            TokenKind::Identifier(_) => self.parse_identifier_expression()?,
-            value_pattern!() => Expression::Value(self.parse_value(None)?),
-            _ => unreachable!(),
-        };
-        expression_stack.push(expression);
+        expression_stack.push(self.parse_operand()?);
 
         loop {
             let Some(operator) = self.peek() else {
@@ -282,11 +273,46 @@ impl<'src> Parser<'src> {
         Some(expression)
     }
 
+    pub fn parse_operand(&mut self) -> Option<Expression> {
+        let token = peek_from!(
+            self,
+            [TokenKind::Identifier(_), TokenKind::If, value_pattern!()]
+        );
+
+        let mut expression = match token.0 {
+            TokenKind::If => Expression::If(self.parse_if_expression()?),
+            TokenKind::Identifier(_) => self.parse_identifier_expression()?,
+            value_pattern!() => Expression::Value(self.parse_value(None)?),
+            _ => unreachable!(),
+        };
+
+        loop {
+            match self.peek() {
+                Some(Token(TokenKind::Dot, _)) => {
+                    consume!(self, TokenKind::Dot);
+
+                    let identifier = consume!(
+                        self, TokenKind::Identifier(identifier) => identifier
+                    );
+
+                    let interned_ident = self.interner.intern(&identifier);
+
+                    expression = Expression::PropertyAccess(PropertyAccess {
+                        object: Box::new(expression),
+                        property: interned_ident,
+                    });
+                }
+                _ => break,
+            }
+        }
+
+        Some(expression)
+    }
+
     pub fn parse_identifier_expression(&mut self) -> Option<Expression> {
         // Possible expressions:
-        // ident (variable access)
-        // ident() (function call)
-        // ident(expr, expr, ..) (function call)
+        // ident           (variable access)
+        // ident((expr,)*) (function call)
 
         let identifier = consume!(self, TokenKind::Identifier(identifier) => identifier);
         let interned_ident = self.interner.intern(&identifier);
@@ -294,41 +320,34 @@ impl<'src> Parser<'src> {
         let token = self.peek();
 
         let expression = match token {
-            Some(token) => match token.0 {
-                TokenKind::LeftParen => {
-                    consume!(self, TokenKind::LeftParen);
+            Some(Token(TokenKind::LeftParen, _)) => {
+                consume!(self, TokenKind::LeftParen);
 
-                    let arguments = if matches!(self.peek(), Some(Token(TokenKind::RightParen, _)))
-                    {
-                        consume!(self, TokenKind::RightParen);
-                        None
-                    } else {
-                        let mut arguments = Vec::new();
-                        loop {
-                            arguments.push(self.parse_expression(false)?);
-                            let token =
-                                consume_from!(self, [TokenKind::Comma, TokenKind::RightParen]);
-                            match token.0 {
-                                TokenKind::Comma => {}
-                                TokenKind::RightParen => break,
-                                _ => unreachable!(),
-                            }
+                let arguments = if matches!(self.peek(), Some(Token(TokenKind::RightParen, _))) {
+                    consume!(self, TokenKind::RightParen);
+                    None
+                } else {
+                    let mut arguments = Vec::new();
+                    loop {
+                        arguments.push(self.parse_expression(false)?);
+                        let token = consume_from!(self, [TokenKind::Comma, TokenKind::RightParen]);
+                        match token.0 {
+                            TokenKind::Comma => {}
+                            TokenKind::RightParen => break,
+                            _ => unreachable!(),
                         }
-                        Some(arguments.into_boxed_slice())
-                    };
+                    }
+                    Some(arguments.into_boxed_slice())
+                };
 
-                    Expression::Call(Call {
-                        name: interned_ident,
-                        arguments: arguments,
-                    })
-                }
+                Expression::Call(Call {
+                    identifier: interned_ident,
+                    arguments: arguments,
+                })
+            }
 
-                _ => Expression::VariableAccess(VariableAccess {
-                    name: interned_ident,
-                }),
-            },
             _ => Expression::VariableAccess(VariableAccess {
-                name: interned_ident,
+                identifier: interned_ident,
             }),
         };
 

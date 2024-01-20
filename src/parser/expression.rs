@@ -8,6 +8,7 @@ use crate::{Operator, Statement};
 pub enum Expression {
     Value(Value),
     VariableAccess(VariableAccess),
+    PropertyAccess(PropertyAccess),
     BinaryOperation(BinaryOperation),
     Call(Call),
     Block(Block),
@@ -17,7 +18,13 @@ pub enum Expression {
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct VariableAccess {
-    pub name: InternedString,
+    pub identifier: InternedString,
+}
+
+#[derive(Debug)]
+pub struct PropertyAccess {
+    pub object: Box<Expression>,
+    pub property: InternedString,
 }
 
 #[derive(Debug)]
@@ -29,7 +36,7 @@ pub struct BinaryOperation {
 
 #[derive(Debug)]
 pub struct Call {
-    pub name: InternedString,
+    pub identifier: InternedString,
     pub arguments: Option<Box<[Expression]>>,
 }
 
