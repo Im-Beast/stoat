@@ -35,5 +35,9 @@ pub fn run(code: &str, debug: bool) -> Result<()> {
         bail!("Failed to parse the code");
     }
 
+    if debug {
+        println!("AST:\n{:#?}", result.ast);
+    }
+
     Ok(())
 }

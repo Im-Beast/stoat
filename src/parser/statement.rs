@@ -10,6 +10,6 @@ pub enum Statement {
 
 #[derive(Debug)]
 pub struct VariableDeclaration {
-    pub name: InternedString,
+    pub identifier: InternedString,
     pub value: Expression,
 }

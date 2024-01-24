@@ -4,7 +4,11 @@ use vm::value::Value;
 #[derive(Debug)]
 #[repr(u8)]
 pub enum Type {
+    Unknown,
+
     UnknownInt(Token),
+    UnknownFloat(Token),
+
     I8,
     I16,
     I32,
@@ -15,7 +19,6 @@ pub enum Type {
     U32,
     U64,
 
-    UnknownFloat(Token),
     F32,
     F64,
 

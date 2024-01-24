@@ -1,3 +1,4 @@
+use lexer::{NumberPrefix, NumberSuffix};
 use shared::interner::InternedString;
 use vm::value::Value;
 
@@ -7,6 +8,7 @@ use crate::{Operator, Statement};
 #[repr(u8)]
 pub enum Expression {
     Value(Value),
+    UnknownNumber(Option<NumberPrefix>, NumberSuffix, String),
     VariableAccess(VariableAccess),
     PropertyAccess(PropertyAccess),
     BinaryOperation(BinaryOperation),
@@ -23,7 +25,7 @@ pub struct VariableAccess {
 
 #[derive(Debug)]
 pub struct PropertyAccess {
-    pub object: Box<Expression>,
+    pub expression: Box<Expression>,
     pub property: InternedString,
 }
 
@@ -36,7 +38,7 @@ pub struct BinaryOperation {
 
 #[derive(Debug)]
 pub struct Call {
-    pub identifier: InternedString,
+    pub object: Box<Expression>,
     pub arguments: Option<Box<[Expression]>>,
 }
 

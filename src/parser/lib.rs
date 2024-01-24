@@ -25,10 +25,11 @@ use error::{ParserError, UnexpectedEOF, UnexpectedToken};
 mod value_type;
 use value_type::Type;
 
-use crate::expression::BinaryOperation;
+use crate::{error::InvalidFloatSuffix, expression::BinaryOperation};
 
 #[derive(Debug)]
 pub struct ParserResult {
+    pub ast: AST,
     pub errors: Vec<ParserError>,
 }
 
@@ -38,7 +39,6 @@ pub struct Parser<'src> {
 
     errors: Vec<ParserError>,
 
-    ast: AST,
     interner: Interner,
     current_span: Span,
 }
@@ -46,10 +46,10 @@ pub struct Parser<'src> {
 macro_rules! value_pattern {
     () => {
         TokenKind::String(_)
+            | TokenKind::Char(_)
+            | TokenKind::Bool(_)
             | TokenKind::Integer(..)
             | TokenKind::Float(..)
-            | TokenKind::Char(_)
-            | TokenKind::Boolean(_)
     };
 }
 
@@ -93,18 +93,7 @@ macro_rules! consume_from {
 
 macro_rules! consume {
     ($self: expr, $pat: pat) => {
-        match $self.consume_specific(stringify!($pat)) {
-            Token($pat, _) => {}
-            token => {
-                $self.unexpected_token(
-                    dbg_line!(),
-                    &token.1,
-                    stringify!($pat),
-                    format!("{:?}", token.0),
-                );
-                return None;
-            }
-        }
+        consume!($self, $pat => {})
     };
 
     ($self: expr, $pat: pat => $out: expr) => {
@@ -131,6 +120,8 @@ macro_rules! consume {
             }
         }
     };
+
+
 }
 
 impl<'src> Parser<'src> {
@@ -141,7 +132,6 @@ impl<'src> Parser<'src> {
             current_span: tokens[0].1,
             errors: Vec::new(),
 
-            ast: AST::default(),
             interner: Interner::default(),
 
             tokens: tokens,
@@ -203,13 +193,14 @@ impl<'src> Parser<'src> {
     }
 
     pub fn parse(mut self) -> ParserResult {
-        loop {
-            if let None = self.parse_statement() {
-                break;
-            }
+        let mut ast = AST::default();
+
+        while let Some(statement) = self.parse_statement() {
+            ast.body.push(statement)
         }
 
         ParserResult {
+            ast,
             errors: self.errors,
         }
     }
@@ -274,17 +265,35 @@ impl<'src> Parser<'src> {
     }
 
     pub fn parse_operand(&mut self) -> Option<Expression> {
+        // Possible operands:
+        // value
+        // variable_access
+        // if cond { ...stmt[]; expr } else { ...stmt[]; expr }
+        // operand.ident
+        // operand
+
         let token = peek_from!(
             self,
             [TokenKind::Identifier(_), TokenKind::If, value_pattern!()]
         );
 
         let mut expression = match token.0 {
-            TokenKind::If => Expression::If(self.parse_if_expression()?),
+            TokenKind::If => {
+                println!("OP IF");
+                let e = Expression::If(self.parse_if_expression()?);
+                println!("OP IF END");
+                e
+            }
             TokenKind::Identifier(_) => self.parse_identifier_expression()?,
-            value_pattern!() => Expression::Value(self.parse_value(None)?),
+            value_pattern!() => self.parse_value()?,
             _ => unreachable!(),
         };
+
+        println!(
+            "OPERAND Expression: {:?}, PEEK: {:?}",
+            expression,
+            self.peek()
+        );
 
         loop {
             match self.peek() {
@@ -298,10 +307,39 @@ impl<'src> Parser<'src> {
                     let interned_ident = self.interner.intern(&identifier);
 
                     expression = Expression::PropertyAccess(PropertyAccess {
-                        object: Box::new(expression),
+                        expression: Box::new(expression),
                         property: interned_ident,
                     });
                 }
+
+                Some(Token(TokenKind::LeftParen, _)) => {
+                    consume!(self, TokenKind::LeftParen);
+
+                    let arguments = if matches!(self.peek(), Some(Token(TokenKind::RightParen, _)))
+                    {
+                        consume!(self, TokenKind::RightParen);
+                        None
+                    } else {
+                        let mut arguments = Vec::new();
+                        loop {
+                            arguments.push(self.parse_expression(false)?);
+                            let token =
+                                consume_from!(self, [TokenKind::Comma, TokenKind::RightParen]);
+                            match token.0 {
+                                TokenKind::Comma => {}
+                                TokenKind::RightParen => break,
+                                _ => unreachable!(),
+                            }
+                        }
+                        Some(arguments.into_boxed_slice())
+                    };
+
+                    expression = Expression::Call(Call {
+                        object: Box::new(expression),
+                        arguments: arguments,
+                    });
+                }
+
                 _ => break,
             }
         }
@@ -320,32 +358,6 @@ impl<'src> Parser<'src> {
         let token = self.peek();
 
         let expression = match token {
-            Some(Token(TokenKind::LeftParen, _)) => {
-                consume!(self, TokenKind::LeftParen);
-
-                let arguments = if matches!(self.peek(), Some(Token(TokenKind::RightParen, _))) {
-                    consume!(self, TokenKind::RightParen);
-                    None
-                } else {
-                    let mut arguments = Vec::new();
-                    loop {
-                        arguments.push(self.parse_expression(false)?);
-                        let token = consume_from!(self, [TokenKind::Comma, TokenKind::RightParen]);
-                        match token.0 {
-                            TokenKind::Comma => {}
-                            TokenKind::RightParen => break,
-                            _ => unreachable!(),
-                        }
-                    }
-                    Some(arguments.into_boxed_slice())
-                };
-
-                Expression::Call(Call {
-                    identifier: interned_ident,
-                    arguments: arguments,
-                })
-            }
-
             _ => Expression::VariableAccess(VariableAccess {
                 identifier: interned_ident,
             }),
@@ -417,50 +429,28 @@ impl<'src> Parser<'src> {
         Some(Block { body })
     }
 
-    pub fn parse_value(&mut self, suggested_type: Option<&Type>) -> Option<Value> {
-        let token = consume_from!(self, [value_pattern!()]);
+    pub fn parse_value(&mut self) -> Option<Expression> {
+        let token = peek_from!(self, [value_pattern!()]);
 
-        let value = match token.0 {
-            TokenKind::Integer(prefix, suffix, value) => {
-                self.parse_integer(prefix, suffix, value, suggested_type)
-            }
-            TokenKind::Float(suffix, value) => self.parse_float(suffix, value, suggested_type),
-            TokenKind::String(value) => Value::String(value),
-            TokenKind::Char(value) => Value::Char(value),
-            TokenKind::Boolean(value) => Value::Bool(value),
+        let value = match &token.0 {
+            TokenKind::Integer(..) => self.parse_integer()?,
+            TokenKind::Float(..) => self.parse_float()?,
+            TokenKind::String(_) => self.parse_string()?,
+            TokenKind::Char(_) => self.parse_char()?,
+            TokenKind::Bool(_) => self.parse_bool()?,
             _ => unreachable!(),
         };
 
         Some(value)
     }
 
-    pub fn parse_integer(
-        &mut self,
-        prefix: NumberPrefix,
-        mut suffix: NumberSuffix,
-        value: String,
-        suggested_type: Option<&Type>,
-    ) -> Value {
-        if suffix == NumberSuffix::None {
-            suffix = match suggested_type {
-                Some(value_type) => match value_type {
-                    Type::I8 => NumberSuffix::I8,
-                    Type::I16 => NumberSuffix::I16,
-                    Type::I32 => NumberSuffix::I32,
-                    Type::I64 => NumberSuffix::I64,
-
-                    Type::U8 => NumberSuffix::U8,
-                    Type::U16 => NumberSuffix::U16,
-                    Type::U32 => NumberSuffix::U32,
-                    Type::U64 => NumberSuffix::U64,
-
-                    _ => unreachable!(),
-                },
-
-                // TODO: try to infer type instead;
-                None => NumberSuffix::I32,
+    pub fn parse_integer(&mut self) -> Option<Expression> {
+        let (prefix, suffix, value) = consume!(
+            self,
+            TokenKind::Integer(prefix, suffix, value) => {
+                (prefix, suffix, value)
             }
-        }
+        );
 
         macro_rules! parse_int {
             ($repr: ident, $value_type: ident) => {{
@@ -469,7 +459,14 @@ impl<'src> Parser<'src> {
             }};
         }
 
-        match suffix {
+        macro_rules! parse_float {
+            ($repr: ident, $value_type: ident) => {{
+                let value = value.parse::<$repr>();
+                Value::$value_type(value.unwrap())
+            }};
+        }
+
+        let value = match suffix {
             NumberSuffix::I8 => parse_int!(i8, I8),
             NumberSuffix::I16 => parse_int!(i16, I16),
             NumberSuffix::I32 => parse_int!(i32, I32),
@@ -480,27 +477,24 @@ impl<'src> Parser<'src> {
             NumberSuffix::U32 => parse_int!(u32, U32),
             NumberSuffix::U64 => parse_int!(u64, U64),
 
-            _ => unreachable!(),
-        }
+            NumberSuffix::F32 => parse_float!(f32, F32),
+            NumberSuffix::F64 => parse_float!(f64, F64),
+
+            NumberSuffix::None => {
+                return Some(Expression::UnknownNumber(Some(prefix), suffix, value))
+            }
+        };
+
+        Some(Expression::Value(value))
     }
 
-    pub fn parse_float(
-        &mut self,
-        mut suffix: NumberSuffix,
-        value: String,
-        suggested_type: Option<&Type>,
-    ) -> Value {
-        if suffix == NumberSuffix::None {
-            suffix = match suggested_type {
-                Some(value_type) => match value_type {
-                    Type::F32 => NumberSuffix::F32,
-                    Type::F64 => NumberSuffix::F64,
-                    _ => unreachable!(),
-                },
-                // TODO: try to infer type instead;
-                None => NumberSuffix::F32,
+    pub fn parse_float(&mut self) -> Option<Expression> {
+        let (suffix, value) = consume!(
+            self,
+            TokenKind::Float(suffix, value) => {
+                (suffix, value)
             }
-        }
+        );
 
         macro_rules! parse_float {
             ($repr: ident, $value_type: ident) => {{
@@ -509,12 +503,38 @@ impl<'src> Parser<'src> {
             }};
         }
 
-        match suffix {
+        let value = match suffix {
             NumberSuffix::F32 => parse_float!(f32, F32),
             NumberSuffix::F64 => parse_float!(f64, F64),
+            NumberSuffix::None => return Some(Expression::UnknownNumber(None, suffix, value)),
 
-            _ => unreachable!(),
-        }
+            _ => {
+                self.error(ParserError::InvalidFloatSuffix(InvalidFloatSuffix {
+                    dbg_line: dbg_line!(),
+                    suffix: suffix,
+                    src: self.code.to_string(),
+                    position: (&self.current_span).into(),
+                }));
+                return None;
+            }
+        };
+
+        Some(Expression::Value(value))
+    }
+
+    pub fn parse_string(&mut self) -> Option<Expression> {
+        let string = consume!(self, TokenKind::String(string) => string);
+        Some(Expression::Value(Value::String(string)))
+    }
+
+    pub fn parse_char(&mut self) -> Option<Expression> {
+        let character = consume!(self, TokenKind::Char(character) => character);
+        Some(Expression::Value(Value::Char(character)))
+    }
+
+    pub fn parse_bool(&mut self) -> Option<Expression> {
+        let boolean = consume!(self, TokenKind::Bool(boolean) => boolean);
+        Some(Expression::Value(Value::Bool(boolean)))
     }
 
     pub fn parse_type(&mut self) -> Option<Type> {
@@ -573,11 +593,12 @@ impl<'src> Parser<'src> {
     }
 
     pub fn parse_let(&mut self) -> Option<Statement> {
+        // Possible statements:
+        // let identifier = expression             (implicit type from expression)
+        // let identifier: value_type = expression (explicit type, force expression to be of value_type)
+
         consume!(self, TokenKind::Let); // let
 
-        // let identifier ..;
-        // or
-        // let mut identifier ..;
         let token = consume_from!(self, [TokenKind::Identifier(_), TokenKind::Mut]);
         let (mutable, identifier) = match token.0 {
             TokenKind::Identifier(identifier) => (false, identifier),
@@ -588,28 +609,17 @@ impl<'src> Parser<'src> {
             _ => unreachable!(),
         };
 
-        // let identifier = value [implicit type from value]
-        // or
-        // let identifier: value_type = value [explicit type, force value to be of value_type]
         let token = consume_from!(self, [TokenKind::Equals, TokenKind::Colon]);
         let (value_type, value) = match &token.0 {
-            TokenKind::Equals => {
-                let value = self.parse_value(None)?;
-                ((&value).into(), value)
-            }
+            TokenKind::Equals => (Type::Unknown, self.parse_expression(true)?),
             TokenKind::Colon => {
                 let value_type = self.parse_type()?;
                 consume!(self, TokenKind::Equals);
-                let value = self.parse_value(Some(&value_type))?;
+                let value = self.parse_expression(true)?;
                 (value_type, value)
             }
             _ => unreachable!(),
         };
-
-        // let identifier = value;
-        // or
-        // let identifier: value_type = value;
-        consume!(self, TokenKind::Semicolon); // ;
 
         println!(
             "let {}{}: {:?} = {:?};",
@@ -622,8 +632,8 @@ impl<'src> Parser<'src> {
         let interned_ident = self.interner.intern(&identifier);
 
         let varialble_declaration = Statement::VariableDeclaration(VariableDeclaration {
-            name: interned_ident,
-            value: Expression::Value(value),
+            identifier: interned_ident,
+            value,
         });
 
         Some(varialble_declaration)

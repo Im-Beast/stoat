@@ -2,7 +2,7 @@ use crate::statement::Statement;
 
 #[derive(Debug)]
 pub struct AST {
-    body: Vec<Statement>,
+    pub body: Vec<Statement>,
 }
 
 impl Default for AST {

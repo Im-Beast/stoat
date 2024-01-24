@@ -26,6 +26,8 @@ let b = 5i32;
 let mut c = 3;
 let d = 3.14159;
 let e = false;
+let f: f32 = 5f32;
+let g: f64 = 32f64;
 
 c + a;
 
@@ -53,5 +55,11 @@ let dog = Dog { woof: false }
 */
 
 dog.woof = true;
+
+let x = if true {
+  dog();
+} else {
+  lol(); 
+};
 
 THE_END;
