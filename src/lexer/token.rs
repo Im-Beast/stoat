@@ -1,5 +1,7 @@
 use shared::span::Span;
 
+use std::fmt;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(u8)]
 pub enum NumberPrefix {
@@ -42,6 +44,24 @@ pub enum NumberSuffix {
     F64, // 69f64
 }
 
+impl fmt::Display for NumberSuffix {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::None => write!(f, "{{none}}"),
+            Self::U8 => write!(f, "u8"),
+            Self::U16 => write!(f, "u16"),
+            Self::U32 => write!(f, "u32"),
+            Self::U64 => write!(f, "u64"),
+            Self::I8 => write!(f, "i8"),
+            Self::I16 => write!(f, "i16"),
+            Self::I32 => write!(f, "i32"),
+            Self::I64 => write!(f, "i64"),
+            Self::F32 => write!(f, "f32"),
+            Self::F64 => write!(f, "f64"),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 #[repr(u8)]
 pub enum TokenKind {
@@ -67,7 +87,7 @@ pub enum TokenKind {
     Float(NumberSuffix, String),
     String(String),
     Char(char),
-    Boolean(bool),
+    Bool(bool),
 
     // Brackets
     LeftCurly,   // {
