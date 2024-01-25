@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use miette::Result;
 
 use expression::VariableAccess;
-use lexer::{NumberPrefix, NumberSuffix, Token, TokenKind};
+use lexer::{NumberSuffix, Token, TokenKind};
 use shared::{dbg_line, interner::Interner, span::Span};
 use vm::value::Value;
 
@@ -278,12 +278,7 @@ impl<'src> Parser<'src> {
         );
 
         let mut expression = match token.0 {
-            TokenKind::If => {
-                println!("OP IF");
-                let e = Expression::If(self.parse_if_expression()?);
-                println!("OP IF END");
-                e
-            }
+            TokenKind::If => self.parse_if_expression()?,
             TokenKind::Identifier(_) => self.parse_identifier_expression()?,
             value_pattern!() => self.parse_value()?,
             _ => unreachable!(),
@@ -368,10 +363,10 @@ impl<'src> Parser<'src> {
 
     pub fn parse_if_statement(&mut self) -> Option<Statement> {
         let expression = self.parse_if_expression()?;
-        Some(Statement::Expression(Expression::If(expression)))
+        Some(Statement::Expression(expression))
     }
 
-    pub fn parse_if_expression(&mut self) -> Option<If> {
+    pub fn parse_if_expression(&mut self) -> Option<Expression> {
         // if cond { stmt[]; expr } else { stmt[]; expr }
 
         consume!(self, TokenKind::If);
@@ -387,7 +382,7 @@ impl<'src> Parser<'src> {
             match &next.0 {
                 TokenKind::If => {
                     let expression = self.parse_if_expression()?;
-                    Some(Box::new(Expression::If(expression)))
+                    Some(Box::new(expression))
                 }
                 _ => {
                     let block = self.parse_block_expression()?;
@@ -398,11 +393,11 @@ impl<'src> Parser<'src> {
             None
         };
 
-        Some(If {
+        Some(Expression::If(If {
             condition: Box::new(condition),
             then_block,
             else_block,
-        })
+        }))
     }
 
     pub fn parse_block_expression(&mut self) -> Option<Block> {
