@@ -11,5 +11,7 @@ pub enum Statement {
 #[derive(Debug)]
 pub struct VariableDeclaration {
     pub identifier: InternedString,
+    pub mutable: bool,
+    pub value_type: Type,
     pub value: Expression,
 }

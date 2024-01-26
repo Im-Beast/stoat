@@ -628,6 +628,8 @@ impl<'src> Parser<'src> {
 
         let varialble_declaration = Statement::VariableDeclaration(VariableDeclaration {
             identifier: interned_ident,
+            mutable,
+            value_type,
             value,
         });
 
