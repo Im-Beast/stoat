@@ -380,7 +380,7 @@ impl<'src> Lexer<'src> {
 
     // lex_minus with methods for lex_subtract and lex_subtract_assign
     pub fn lex_minus(&mut self) -> Token {
-        match self.peek() {
+        match self.peek_next(1) {
             Some('=') => self.lex_subtract_assign(),
             Some('>') => self.lex_right_arrow(),
             _ => self.lex_subtract(),
@@ -463,7 +463,7 @@ impl<'src> Lexer<'src> {
     }
 
     pub fn lex_left_pointy_bracket(&mut self) -> Token {
-        match self.peek() {
+        match self.peek_next(1) {
             Some('=') => self.lex_less_than_or_equal(),
             Some('-') => self.lex_left_arrow(),
             _ => self.lex_less_than(),
