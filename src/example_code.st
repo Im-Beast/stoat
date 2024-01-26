@@ -29,6 +29,8 @@ let e = false;
 let f: f32 = 5f32;
 let g: f64 = 32f64;
 
+"dog";
+
 c + a;
 
 if a > b {
@@ -40,11 +42,17 @@ if a == b {}
 if a > b {}
 if a < b {}
 
-/*fun add(a: i32, b: i32) -> i32 {
+fun add(a: i32, b: i32) -> i32 {
   a + b
-}*/
+}
 
 add(1, 2);
+
+{
+  1;
+  2;
+  1
+}
 
 /*
 struct Dog {

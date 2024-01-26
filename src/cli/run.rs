@@ -36,7 +36,7 @@ pub fn run(code: &str, debug: bool) -> Result<()> {
     }
 
     if debug {
-        println!("AST:\n{:#?}", result.ast);
+        println!("AST:\n{:?}", result.ast);
     }
 
     Ok(())

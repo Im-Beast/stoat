@@ -1,4 +1,4 @@
-use crate::expression::Expression;
+use crate::{expression::Expression, value_type::Type};
 use shared::interner::InternedString;
 
 #[derive(Debug)]

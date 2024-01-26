@@ -1,8 +1,8 @@
 use std::collections::VecDeque;
 
-use miette::Result;
+use miette::{Result, SourceSpan};
 
-use expression::VariableAccess;
+use expression::{ExpressionContext, VariableAccess};
 use lexer::{NumberSuffix, Token, TokenKind};
 use shared::{dbg_line, interner::Interner, span::Span};
 use vm::value::Value;
@@ -25,7 +25,10 @@ use error::{ParserError, UnexpectedEOF, UnexpectedToken};
 mod value_type;
 use value_type::Type;
 
-use crate::{error::InvalidFloatSuffix, expression::BinaryOperation};
+use crate::{
+    error::InvalidFloatSuffix,
+    expression::{BinaryOperation, Function, Return},
+};
 
 #[derive(Debug)]
 pub struct ParserResult {
@@ -60,7 +63,7 @@ macro_rules! peek_from {
             Some(token) => {
                 $self.unexpected_token(
                     dbg_line!(),
-                    &token.1.clone(),
+                    (&token.1).into(),
                     stringify!($($pat),*),
                     format!("{:?}", token.0)
                 );
@@ -81,7 +84,7 @@ macro_rules! consume_from {
             token =>  {
                 $self.unexpected_token(
                     dbg_line!(),
-                    &token.1,
+                    (&token.1).into(),
                     stringify!($($pat),*),
                     format!("{:?}", token.0)
                 );
@@ -102,7 +105,7 @@ macro_rules! consume {
             token => {
                 $self.unexpected_token(
                     dbg_line!(),
-                    &token.1,
+                    (&token.1).into(),
                     stringify!($pat),
                     format!("{:?}", token.0),
                 );
@@ -120,8 +123,6 @@ macro_rules! consume {
             }
         }
     };
-
-
 }
 
 impl<'src> Parser<'src> {
@@ -179,7 +180,7 @@ impl<'src> Parser<'src> {
     pub fn unexpected_token(
         &mut self,
         dbg_line: String,
-        span: &Span,
+        span: SourceSpan,
         expected: &str,
         actual: String,
     ) {
@@ -188,14 +189,14 @@ impl<'src> Parser<'src> {
             expected: expected.to_string(),
             actual: actual.to_string(),
             src: self.code.to_string(),
-            position: span.into(),
+            position: span,
         }))
     }
 
     pub fn parse(mut self) -> ParserResult {
         let mut ast = AST::default();
 
-        while let Some(statement) = self.parse_statement() {
+        while let Some(statement) = self.parse_statement(&ExpressionContext::Default) {
             ast.body.push(statement)
         }
 
@@ -205,19 +206,19 @@ impl<'src> Parser<'src> {
         }
     }
 
-    pub fn parse_expression_statement(&mut self) -> Option<Statement> {
-        let expression = self.parse_expression(true)?;
+    pub fn parse_expression_statement(&mut self, context: &ExpressionContext) -> Option<Statement> {
+        let expression = self.parse_expression(context)?;
         Some(Statement::Expression(expression))
     }
 
-    pub fn parse_expression(&mut self, end_with_semicolon: bool) -> Option<Expression> {
+    pub fn parse_expression(&mut self, context: &ExpressionContext) -> Option<Expression> {
         // Possible expressions:
         // value
         // variable_access
         // expr (op expr)*                                      (binary operation)
         // expr.ident                                           (property access)
-        // if cond { ...stmt[]; expr } else { ...stmt[]; expr } (if expression)
-        // { ...stmt[]; expr }                                  (block)
+        // if cond { ...stmt[]; expr? } else { ...stmt[]; expr? } (if expression)
+        // { ...stmt[]; expr? }                                  (block)
 
         let mut expression_stack = Vec::new();
 
@@ -225,9 +226,13 @@ impl<'src> Parser<'src> {
 
         loop {
             let Some(operator) = self.peek() else {
-                if end_with_semicolon {
-                    self.unexpected_eof("Operator or Semicolon");
-                    return None;
+                match context {
+                    ExpressionContext::NoSemicolon => {}
+                    ExpressionContext::Default => self.unexpected_eof("Operator or Semicolon"),
+                    ExpressionContext::IfCondition => self.unexpected_eof("Operator or LeftCurly"),
+                    ExpressionContext::Function | ExpressionContext::Block => {
+                        self.unexpected_eof("Operator, Semicolon or RightCurly")
+                    }
                 }
                 break;
             };
@@ -243,7 +248,10 @@ impl<'src> Parser<'src> {
                 return None;
             };
 
-            let rhs = self.parse_expression(false)?;
+            // We don't want to parse the semicolon (or any delimiter for that matter)
+            // in that part of expression, since we're handling it
+            // at the end of the expression parsing step
+            let rhs = self.parse_expression(&ExpressionContext::NoSemicolon)?;
 
             expression_stack.push(Expression::BinaryOperation(BinaryOperation {
                 left: Box::new(lhs),
@@ -252,13 +260,28 @@ impl<'src> Parser<'src> {
             }));
         }
 
-        if end_with_semicolon {
-            consume!(self, TokenKind::Semicolon);
+        // TODO: expression_stack NOT empty => error
+
+        match context {
+            // Semicolon
+            ExpressionContext::Default => consume!(self, TokenKind::Semicolon),
+            // No semicolon
+            ExpressionContext::NoSemicolon | ExpressionContext::IfCondition => {}
+            // Semicolon or imply return
+            ExpressionContext::Function | ExpressionContext::Block => {
+                // ! When we parse blocks, we don't consume the delimiter
+                // ! It's handled by the block parsing function
+                let token = peek_from!(self, [TokenKind::Semicolon, TokenKind::RightCurly]);
+                if let TokenKind::RightCurly = token.0 {
+                    let expression = expression_stack.pop().unwrap();
+                    expression_stack.push(Expression::ImplicitReturn(Return {
+                        expression: Box::new(expression),
+                    }));
+                }
+            }
         }
 
         let expression = expression_stack.pop().unwrap();
-        // TODO: expression.is_none() => error
-        // TODO: expression_stack NOT empty => error
 
         println!("Expression: {:?}", expression);
         Some(expression)
@@ -280,15 +303,9 @@ impl<'src> Parser<'src> {
         let mut expression = match token.0 {
             TokenKind::If => self.parse_if_expression()?,
             TokenKind::Identifier(_) => self.parse_identifier_expression()?,
-            value_pattern!() => self.parse_value()?,
+            value_pattern!() => self.parse_value_expression()?,
             _ => unreachable!(),
         };
-
-        println!(
-            "OPERAND Expression: {:?}, PEEK: {:?}",
-            expression,
-            self.peek()
-        );
 
         loop {
             match self.peek() {
@@ -310,20 +327,18 @@ impl<'src> Parser<'src> {
                 Some(Token(TokenKind::LeftParen, _)) => {
                     consume!(self, TokenKind::LeftParen);
 
-                    let arguments = if matches!(self.peek(), Some(Token(TokenKind::RightParen, _)))
-                    {
-                        consume!(self, TokenKind::RightParen);
+                    let arguments = if let TokenKind::RightParen = self.peek()?.0 {
+                        self.consume_any();
                         None
                     } else {
                         let mut arguments = Vec::new();
                         loop {
-                            arguments.push(self.parse_expression(false)?);
+                            arguments.push(self.parse_expression(&ExpressionContext::NoSemicolon)?);
                             let token =
                                 consume_from!(self, [TokenKind::Comma, TokenKind::RightParen]);
-                            match token.0 {
-                                TokenKind::Comma => {}
-                                TokenKind::RightParen => break,
-                                _ => unreachable!(),
+
+                            if let TokenKind::RightParen = token.0 {
+                                break;
                             }
                         }
                         Some(arguments.into_boxed_slice())
@@ -371,24 +386,22 @@ impl<'src> Parser<'src> {
 
         consume!(self, TokenKind::If);
 
-        let condition = self.parse_expression(false)?;
-
-        let then_block = self.parse_block_expression()?;
-
+        let condition = self.parse_expression(&ExpressionContext::IfCondition)?;
+        let then_block = self.parse_block_expression(&ExpressionContext::Block)?;
         let else_block = if matches!(self.peek(), Some(Token(TokenKind::Else, _))) {
-            consume!(self, TokenKind::Else); // else
+            consume!(self, TokenKind::Else);
 
             let next = self.peek()?;
-            match &next.0 {
+            Some(Box::new(match &next.0 {
                 TokenKind::If => {
                     let expression = self.parse_if_expression()?;
-                    Some(Box::new(expression))
+                    expression
                 }
                 _ => {
-                    let block = self.parse_block_expression()?;
-                    Some(Box::new(Expression::Block(block)))
+                    let block = self.parse_block_expression(&ExpressionContext::Block)?;
+                    Expression::Block(block)
                 }
-            }
+            }))
         } else {
             None
         };
@@ -400,31 +413,42 @@ impl<'src> Parser<'src> {
         }))
     }
 
-    pub fn parse_block_expression(&mut self) -> Option<Block> {
-        // { stmt[]; expr };
+    pub fn parse_block_expression(&mut self, context: &ExpressionContext) -> Option<Block> {
+        // { stmt[]; expr? };
 
-        consume!(self, TokenKind::LeftCurly); // {
+        consume!(self, TokenKind::LeftCurly);
 
+        // stmt[]; expr?
         let mut body = Vec::new();
         loop {
-            let next = self.peek()?;
-
-            match &next.0 {
-                TokenKind::RightCurly => {
-                    consume!(self, TokenKind::RightCurly); // }
-                    break;
-                }
-                _ => {
-                    let statement = self.parse_statement()?;
-                    body.push(statement);
-                }
+            if let TokenKind::RightCurly = self.peek()?.0 {
+                break;
             }
+
+            let statement = self.parse_statement(context)?;
+
+            if let Statement::Expression(Expression::ImplicitReturn(_)) = statement {
+                break;
+            } else {
+                consume!(self, TokenKind::Semicolon)
+            }
+
+            body.push(statement);
         }
 
-        Some(Block { body })
+        consume!(self, TokenKind::RightCurly);
+
+        Some(Block {
+            body: body.into_boxed_slice(),
+        })
     }
 
-    pub fn parse_value(&mut self) -> Option<Expression> {
+    pub fn parse_block_statement(&mut self) -> Option<Statement> {
+        let block = self.parse_block_expression(&ExpressionContext::Block)?;
+        Some(Statement::Expression(Expression::Block(block)))
+    }
+
+    pub fn parse_value_expression(&mut self) -> Option<Expression> {
         let token = peek_from!(self, [value_pattern!()]);
 
         let value = match &token.0 {
@@ -437,6 +461,11 @@ impl<'src> Parser<'src> {
         };
 
         Some(value)
+    }
+
+    pub fn parse_value_statement(&mut self) -> Option<Statement> {
+        let expression = self.parse_value_expression()?;
+        Some(Statement::Expression(expression))
     }
 
     pub fn parse_integer(&mut self) -> Option<Expression> {
@@ -587,10 +616,10 @@ impl<'src> Parser<'src> {
         Some(value_type)
     }
 
-    pub fn parse_let(&mut self) -> Option<Statement> {
+    pub fn parse_variable_declaration(&mut self) -> Option<Statement> {
         // Possible statements:
         // let identifier = expression             (implicit type from expression)
-        // let identifier: value_type = expression (explicit type, force expression to be of value_type)
+        // let identifier: type = expression (explicit type, force expression to be of type)
 
         consume!(self, TokenKind::Let); // let
 
@@ -606,23 +635,18 @@ impl<'src> Parser<'src> {
 
         let token = consume_from!(self, [TokenKind::Equals, TokenKind::Colon]);
         let (value_type, value) = match &token.0 {
-            TokenKind::Equals => (Type::Unknown, self.parse_expression(true)?),
+            TokenKind::Equals => (
+                Type::Unknown,
+                self.parse_expression(&ExpressionContext::Default)?,
+            ),
             TokenKind::Colon => {
                 let value_type = self.parse_type()?;
                 consume!(self, TokenKind::Equals);
-                let value = self.parse_expression(true)?;
+                let value = self.parse_expression(&ExpressionContext::Default)?;
                 (value_type, value)
             }
             _ => unreachable!(),
         };
-
-        println!(
-            "let {}{}: {:?} = {:?};",
-            if mutable { "mut " } else { "" },
-            identifier,
-            value_type,
-            value
-        );
 
         let interned_ident = self.interner.intern(&identifier);
 
@@ -636,17 +660,84 @@ impl<'src> Parser<'src> {
         Some(varialble_declaration)
     }
 
-    pub fn parse_statement(&mut self) -> Option<Statement> {
+    pub fn parse_function_expression(&mut self) -> Option<Expression> {
+        // Possible statements:
+        // fun identifier((ident: type,)*) { stmt[]; expr? }
+        // fun identifier((ident: type,)*) -> type { stmt[]; expr? }
+
+        consume!(self, TokenKind::Fun);
+
+        let identifier = consume!(self, TokenKind::Identifier(identifier) => identifier);
+        let interned_ident = self.interner.intern(&identifier);
+
+        consume!(self, TokenKind::LeftParen);
+
+        // (ident: type,)*
+        let parameters = if let TokenKind::RightParen = self.peek()?.0 {
+            consume!(self, TokenKind::RightParen);
+            None
+        } else {
+            let mut parameters = Vec::new();
+            loop {
+                // ident: type
+                let identifier = consume!(self, TokenKind::Identifier(identifier) => identifier);
+                let interned_ident = self.interner.intern(&identifier);
+                consume!(self, TokenKind::Colon);
+                let value_type = self.parse_type()?;
+
+                parameters.push((interned_ident, value_type));
+
+                let token = consume_from!(self, [TokenKind::Comma, TokenKind::RightParen]);
+                if let TokenKind::RightParen = token.0 {
+                    break;
+                }
+            }
+            Some(parameters.into_boxed_slice())
+        };
+
+        // -> type
+        let return_type = match peek_from!(self, [TokenKind::RightArrow, TokenKind::LeftCurly]).0 {
+            TokenKind::RightArrow => {
+                self.consume_any();
+                Some(self.parse_type()?)
+            }
+            TokenKind::LeftCurly => None,
+            _ => unreachable!(),
+        };
+
+        // { stmt[]; expr? }
+        let block = self.parse_block_expression(&ExpressionContext::Function)?;
+
+        Some(Expression::Function(Function {
+            identifier: interned_ident,
+            parameters,
+            return_type,
+            block,
+        }))
+    }
+
+    pub fn parse_function_statement(&mut self) -> Option<Statement> {
+        Some(Statement::Expression(self.parse_function_expression()?))
+    }
+
+    pub fn parse_statement(&mut self, context: &ExpressionContext) -> Option<Statement> {
         let next = self.peek()?;
 
         let statement = match &next.0 {
             TokenKind::BlockComment(_) | TokenKind::LineComment(_) => {
                 self.consume_any();
-                return self.parse_statement();
+                return self.parse_statement(context);
             }
-            TokenKind::Let => self.parse_let()?,
-            TokenKind::Identifier(_) => self.parse_expression_statement()?,
+
+            TokenKind::Identifier(_) | value_pattern!() => {
+                self.parse_expression_statement(context)?
+            }
+            TokenKind::Let => self.parse_variable_declaration()?,
+
             TokenKind::If => self.parse_if_statement()?,
+            TokenKind::Fun => self.parse_function_statement()?,
+            TokenKind::LeftCurly => self.parse_block_statement()?,
+
             token => todo!("Token: {:?}", token),
         };
 
