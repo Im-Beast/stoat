@@ -4,6 +4,7 @@ use vm::value::Value;
 
 use crate::{value_type::Type, Operator, Statement};
 
+#[derive(Debug)]
 #[repr(u8)]
 pub enum ExpressionContext {
     // Required semicolons after expressions
@@ -24,6 +25,7 @@ pub enum Expression {
     UnknownNumber(Option<NumberPrefix>, NumberSuffix, String),
     VariableAccess(VariableAccess),
     PropertyAccess(PropertyAccess),
+    UnaryOperation(UnaryOperation),
     BinaryOperation(BinaryOperation),
     Call(Call),
     Block(Block),
@@ -31,6 +33,7 @@ pub enum Expression {
     Function(Function),
     ImplicitReturn(Return),
     ExplicitReturn(Return),
+    Contained(ContainedExpresison),
 }
 
 #[derive(Debug)]
@@ -43,6 +46,12 @@ pub struct VariableAccess {
 pub struct PropertyAccess {
     pub expression: Box<Expression>,
     pub property: InternedString,
+}
+
+#[derive(Debug)]
+pub struct UnaryOperation {
+    pub operator: Operator,
+    pub expression: Box<Expression>,
 }
 
 #[derive(Debug)]
@@ -82,5 +91,11 @@ pub struct Function {
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct Return {
+    pub expression: Box<Expression>,
+}
+
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct ContainedExpresison {
     pub expression: Box<Expression>,
 }

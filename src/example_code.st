@@ -21,13 +21,24 @@ export mod nested_module {
 
 let char = ' ';
 
-let a: i32 = 5;
-let b = 5i32;
-let mut c = 3;
-let d = 3.14159;
-let e = false;
-let f: f32 = 5f32;
-let g: f64 = 32f64;
+let explicit_i32: i32 = 5;
+let implici_i32 = 5i32;
+let mut unknown_i = 3;
+let unknown_f = 3.14159;
+let implicit_bool = false;
+let explicit_f32: f32 = 5f32;
+let explicit_f64: f64 = 32f64;
+
+/*
+let implicit_tuple = (1i32, 2i32, 3i32);
+let explicit_tuple: (i32, i32, i32) = (1, 2, 3);
+
+let implicit_arr = [1i32, 2i32, 3i32];
+let explicit_arr: i32[3] = [1, 2, 3];
+
+let implicit_vec = [|1i32, 2i32|];
+let explicit_vec: i32[] = [|1, 2|];
+*/
 
 "dog";
 
@@ -44,6 +55,20 @@ if a < b {}
 
 fun add(a: i32, b: i32) -> i32 {
   a + b
+}
+
+fun mul(a: i32, b: i32) -> i32 {
+  if a > b {
+    return a * b;
+  }
+
+  return a * b;
+}
+
+
+// this crashes
+if !(1 != 2) {
+  print("yep");
 }
 
 add(1, 2);

@@ -27,7 +27,7 @@ use value_type::Type;
 
 use crate::{
     error::InvalidFloatSuffix,
-    expression::{BinaryOperation, Function, Return},
+    expression::{BinaryOperation, ContainedExpresison, Function, Return, UnaryOperation},
 };
 
 #[derive(Debug)]
@@ -53,6 +53,12 @@ macro_rules! value_pattern {
             | TokenKind::Bool(_)
             | TokenKind::Integer(..)
             | TokenKind::Float(..)
+    };
+}
+
+macro_rules! no_semicolon_statement_pattern {
+    () => {
+        Statement::Expression(Expression::If(_) | Expression::Block(_))
     };
 }
 
@@ -111,7 +117,7 @@ macro_rules! consume {
                 );
                 return None;
             }
-        }
+          }
     };
 
     (span; $self: expr, $pat: pat, $out: tt) => {
@@ -222,7 +228,7 @@ impl<'src> Parser<'src> {
 
         let mut expression_stack = Vec::new();
 
-        expression_stack.push(self.parse_operand()?);
+        expression_stack.push(self.parse_operand_with_unary_operators(context)?);
 
         loop {
             let Some(operator) = self.peek() else {
@@ -261,29 +267,32 @@ impl<'src> Parser<'src> {
         }
 
         // TODO: expression_stack NOT empty => error
+        let mut expression = expression_stack.pop().unwrap();
 
         match context {
             // Semicolon
             ExpressionContext::Default => consume!(self, TokenKind::Semicolon),
             // No semicolon
-            ExpressionContext::NoSemicolon | ExpressionContext::IfCondition => {}
+            ExpressionContext::NoSemicolon => {}
+            // Left curly bracket
+            ExpressionContext::IfCondition => {
+                // ! When we parse if conditions, we don't consume the left bracket
+                // ! Because parse_block_expression does it for us
+                peek_from!(self, [TokenKind::LeftCurly]);
+            }
             // Semicolon or imply return
             ExpressionContext::Function | ExpressionContext::Block => {
                 // ! When we parse blocks, we don't consume the delimiter
                 // ! It's handled by the block parsing function
                 let token = peek_from!(self, [TokenKind::Semicolon, TokenKind::RightCurly]);
                 if let TokenKind::RightCurly = token.0 {
-                    let expression = expression_stack.pop().unwrap();
-                    expression_stack.push(Expression::ImplicitReturn(Return {
+                    expression = Expression::ImplicitReturn(Return {
                         expression: Box::new(expression),
-                    }));
+                    });
                 }
             }
         }
 
-        let expression = expression_stack.pop().unwrap();
-
-        println!("Expression: {:?}", expression);
         Some(expression)
     }
 
@@ -357,6 +366,49 @@ impl<'src> Parser<'src> {
         Some(expression)
     }
 
+    pub fn parse_operand_with_unary_operators(
+        &mut self,
+        context: &ExpressionContext,
+    ) -> Option<Expression> {
+        match self.peek()?.0 {
+            TokenKind::Not => self.parse_not_expression(context),
+            TokenKind::Return => self.parse_return_expression(context),
+            TokenKind::LeftParen => self.parse_contained_expression(),
+            _ => self.parse_operand(),
+        }
+    }
+
+    pub fn parse_not_expression(&mut self, context: &ExpressionContext) -> Option<Expression> {
+        consume!(self, TokenKind::Not);
+        let expression = self.parse_expression(context)?;
+        Some(Expression::UnaryOperation(UnaryOperation {
+            operator: Operator::Not,
+            expression: Box::new(expression),
+        }))
+    }
+
+    pub fn parse_return_expression(&mut self, context: &ExpressionContext) -> Option<Expression> {
+        consume!(self, TokenKind::Return);
+        let expression = self.parse_expression(context)?;
+        Some(Expression::ExplicitReturn(Return {
+            expression: Box::new(expression),
+        }))
+    }
+
+    pub fn parse_contained_expression(&mut self) -> Option<Expression> {
+        consume!(self, TokenKind::LeftParen);
+        let expression = self.parse_expression(&ExpressionContext::NoSemicolon)?;
+        consume!(self, TokenKind::RightParen);
+        Some(Expression::Contained(ContainedExpresison {
+            expression: Box::new(expression),
+        }))
+    }
+
+    pub fn parse_return_statement(&mut self, context: &ExpressionContext) -> Option<Statement> {
+        let expression = self.parse_return_expression(context)?;
+        Some(Statement::Expression(expression))
+    }
+
     pub fn parse_identifier_expression(&mut self) -> Option<Expression> {
         // Possible expressions:
         // ident           (variable access)
@@ -427,10 +479,16 @@ impl<'src> Parser<'src> {
 
             let statement = self.parse_statement(context)?;
 
-            if let Statement::Expression(Expression::ImplicitReturn(_)) = statement {
-                break;
-            } else {
-                consume!(self, TokenKind::Semicolon)
+            match statement {
+                // We don't want to assert the type of the token
+                // It was done already in parse_expression
+                // We are sure that the next token is a right curly
+                Statement::Expression(Expression::ImplicitReturn(_)) => break,
+
+                // We don't require a semicolon after expressions like ifs
+                no_semicolon_statement_pattern!() => {}
+
+                _ => consume!(self, TokenKind::Semicolon),
             }
 
             body.push(statement);
@@ -732,6 +790,8 @@ impl<'src> Parser<'src> {
             TokenKind::Identifier(_) | value_pattern!() => {
                 self.parse_expression_statement(context)?
             }
+            TokenKind::Return => self.parse_return_statement(context)?,
+
             TokenKind::Let => self.parse_variable_declaration()?,
 
             TokenKind::If => self.parse_if_statement()?,
