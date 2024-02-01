@@ -29,6 +29,9 @@ let implicit_bool = false;
 let explicit_f32: f32 = 5f32;
 let explicit_f64: f64 = 32f64;
 
+let negative_i32: i32 = -5;
+let test = !false;
+
 /*
 let implicit_tuple = (1i32, 2i32, 3i32);
 let explicit_tuple: (i32, i32, i32) = (1, 2, 3);

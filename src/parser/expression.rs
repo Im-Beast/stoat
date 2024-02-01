@@ -33,7 +33,7 @@ pub enum Expression {
     Function(Function),
     ImplicitReturn(Return),
     ExplicitReturn(Return),
-    Contained(ContainedExpresison),
+    Contained(Contained),
 }
 
 #[derive(Debug)]
@@ -96,6 +96,6 @@ pub struct Return {
 
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct ContainedExpresison {
+pub struct Contained {
     pub expression: Box<Expression>,
 }

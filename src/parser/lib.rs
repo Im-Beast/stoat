@@ -27,7 +27,7 @@ use value_type::Type;
 
 use crate::{
     error::InvalidFloatSuffix,
-    expression::{BinaryOperation, ContainedExpresison, Function, Return, UnaryOperation},
+    expression::{BinaryOperation, Contained, Function, Return, UnaryOperation},
 };
 
 #[derive(Debug)]
@@ -370,43 +370,50 @@ impl<'src> Parser<'src> {
         &mut self,
         context: &ExpressionContext,
     ) -> Option<Expression> {
-        match self.peek()?.0 {
-            TokenKind::Not => self.parse_not_expression(context),
-            TokenKind::Return => self.parse_return_expression(context),
-            TokenKind::LeftParen => self.parse_contained_expression(),
-            _ => self.parse_operand(),
-        }
-    }
+        // Possible operands:
+        // return operand
+        // -operand
 
-    pub fn parse_not_expression(&mut self, context: &ExpressionContext) -> Option<Expression> {
-        consume!(self, TokenKind::Not);
-        let expression = self.parse_expression(context)?;
+        let operator = match self.peek()?.0 {
+            TokenKind::Not => {
+                self.consume_any();
+                Operator::Not
+            }
+            TokenKind::Subtract => {
+                self.consume_any();
+                Operator::Subtract
+            }
+            TokenKind::LeftParen => {
+                // Either a contained expression or a tuple
+                let operand = self.parse_operand()?;
+
+                // If the expression is a tuple, we don't want to parse it as a unary operator
+                // TODO: Finish this, it's currently not working as parsing tuples haven't been added yet
+                if matches!(operand, Expression::Value(Value::Tuple(_))) {
+                    return Some(operand);
+                }
+
+                return Some(Expression::Contained(Contained {
+                    expression: Box::new(operand),
+                }));
+            }
+            _ => return self.parse_operand(),
+        };
+
+        let operand = self.parse_operand_with_unary_operators(context)?;
+
         Some(Expression::UnaryOperation(UnaryOperation {
-            operator: Operator::Not,
-            expression: Box::new(expression),
-        }))
-    }
-
-    pub fn parse_return_expression(&mut self, context: &ExpressionContext) -> Option<Expression> {
-        consume!(self, TokenKind::Return);
-        let expression = self.parse_expression(context)?;
-        Some(Expression::ExplicitReturn(Return {
-            expression: Box::new(expression),
-        }))
-    }
-
-    pub fn parse_contained_expression(&mut self) -> Option<Expression> {
-        consume!(self, TokenKind::LeftParen);
-        let expression = self.parse_expression(&ExpressionContext::NoSemicolon)?;
-        consume!(self, TokenKind::RightParen);
-        Some(Expression::Contained(ContainedExpresison {
-            expression: Box::new(expression),
+            operator,
+            expression: Box::new(operand),
         }))
     }
 
     pub fn parse_return_statement(&mut self, context: &ExpressionContext) -> Option<Statement> {
-        let expression = self.parse_return_expression(context)?;
-        Some(Statement::Expression(expression))
+        consume!(self, TokenKind::Return);
+        let expression = self.parse_expression(context);
+        Some(Statement::Expression(Expression::ExplicitReturn(Return {
+            expression: Box::new(expression?),
+        })))
     }
 
     pub fn parse_identifier_expression(&mut self) -> Option<Expression> {
