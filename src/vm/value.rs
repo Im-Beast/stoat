@@ -13,11 +13,17 @@ pub enum Value {
     F32(f32),
     F64(f64),
 
+    Pointer(usize),
+
     Bool(bool),
     String(String),
     Char(char),
 
-    Pointer(usize),
+    Array(Box<[Value]>),
+    // Currently its basically the same as Value::Array
+    // However I plan to rework how values are handled in the VM
+    Tuple(Box<[Value]>),
+    Vector(Vec<Value>),
 }
 
 impl PartialEq for Value {
@@ -116,9 +122,7 @@ macro_rules! into_num_impl {
                     Value::F32(v) => *v as $ty,
                     Value::F64(v) => *v as $ty,
                     Value::Pointer(v) => *v as $ty,
-                    Value::Char(_) => panic!("Cannot convert char to integer"),
-                    Value::Bool(_) => panic!("Cannot convert boolean to integer"),
-                    Value::String(_) => panic!("Cannot convert string to integer"),
+                    value => panic!("Cannot convert {value:?} to integer"),
                 }
             }
         }
