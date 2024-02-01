@@ -32,16 +32,18 @@ let explicit_f64: f64 = 32f64;
 let negative_i32: i32 = -5;
 let test = !false;
 
-/*
+
 let implicit_tuple = (1i32, 2i32, 3i32);
-let explicit_tuple: (i32, i32, i32) = (1, 2, 3);
+let implicit_tuple = (1+2, 3i32, "dog");
+// let explicit_tuple: (i32, i32, i32) = (1, 2, 3);
 
 let implicit_arr = [1i32, 2i32, 3i32];
-let explicit_arr: i32[3] = [1, 2, 3];
+let implicit_arr = [1+2, 2, 5i32];
+// let explicit_arr: i32[3] = [1, 2, 3];
 
 let implicit_vec = [|1i32, 2i32|];
-let explicit_vec: i32[] = [|1, 2|];
-*/
+// let explicit_vec: i32[] = [|1, 2|];
+
 
 "dog";
 
@@ -70,7 +72,7 @@ fun mul(a: i32, b: i32) -> i32 {
 
 
 // this crashes
-if !(1 != 2) {
+if !("ahu" != 2) {
   print("yep");
 }
 

@@ -53,6 +53,8 @@ macro_rules! value_pattern {
             | TokenKind::Bool(_)
             | TokenKind::Integer(..)
             | TokenKind::Float(..)
+            | TokenKind::LeftParen
+            | TokenKind::LeftSquare
     };
 }
 
@@ -387,11 +389,20 @@ impl<'src> Parser<'src> {
                 // Either a contained expression or a tuple
                 let operand = self.parse_operand()?;
 
-                // If the expression is a tuple, we don't want to parse it as a unary operator
-                // TODO: Finish this, it's currently not working as parsing tuples haven't been added yet
-                if matches!(operand, Expression::Value(Value::Tuple(_))) {
-                    return Some(operand);
-                }
+                let operand = match operand {
+                    // If the expression is a tuple with only one item
+                    // We reinterpret it as contained expressionan
+                    Expression::Value(Value::Tuple(values)) if values.len() == 1 => {
+                        let value = values.into_vec().pop()?;
+                        Expression::Value(value)
+                    }
+                    Expression::Tuple(expressions) if expressions.len() == 1 => {
+                        let expression = expressions.into_vec().pop()?;
+                        expression
+                    }
+                    // Actual tuple
+                    _ => return Some(operand),
+                };
 
                 return Some(Expression::Contained(Contained {
                     expression: Box::new(operand),
@@ -522,6 +533,8 @@ impl<'src> Parser<'src> {
             TokenKind::String(_) => self.parse_string()?,
             TokenKind::Char(_) => self.parse_char()?,
             TokenKind::Bool(_) => self.parse_bool()?,
+            TokenKind::LeftParen => self.parse_tuple()?,
+            TokenKind::LeftSquare => self.parse_array_or_vec()?,
             _ => unreachable!(),
         };
 
@@ -531,6 +544,131 @@ impl<'src> Parser<'src> {
     pub fn parse_value_statement(&mut self) -> Option<Statement> {
         let expression = self.parse_value_expression()?;
         Some(Statement::Expression(expression))
+    }
+
+    pub fn parse_tuple(&mut self) -> Option<Expression> {
+        // Possible expressions:
+        // ((expr,)*)
+        // ((value,)*)
+        // (((expr|value),)*)
+
+        consume!(self, TokenKind::LeftParen);
+
+        let mut values = Vec::new();
+
+        loop {
+            values.push(self.parse_expression(&ExpressionContext::NoSemicolon)?);
+
+            let token = consume_from!(self, [TokenKind::Comma, TokenKind::RightParen]);
+            if let TokenKind::RightParen = token.0 {
+                break;
+            }
+        }
+
+        // Check if tuple can be converted directly to VM::Value
+        // If so, do it
+        let full_of_values = values
+            .iter()
+            .all(|expr| matches!(expr, Expression::Value(_)));
+        if full_of_values {
+            let values = values
+                .into_iter()
+                .map(|expr| match expr {
+                    Expression::Value(value) => value,
+                    _ => unreachable!(),
+                })
+                .collect::<Box<_>>();
+            return Some(Expression::Value(Value::Tuple(values)));
+        }
+
+        Some(Expression::Tuple(values.into_boxed_slice()))
+    }
+
+    pub fn parse_array_or_vec(&mut self) -> Option<Expression> {
+        if matches!(self.peek_next(1), Some(Token(TokenKind::Pipe, _))) {
+            self.parse_vec()
+        } else {
+            self.parse_array()
+        }
+    }
+
+    pub fn parse_array(&mut self) -> Option<Expression> {
+        // Possible expressions:
+        // [(expr,)*]
+        // [(value,)*]
+        // [(expr|value,)*]
+
+        consume!(self, TokenKind::LeftSquare);
+
+        let mut values = Vec::new();
+
+        loop {
+            values.push(self.parse_expression(&ExpressionContext::NoSemicolon)?);
+
+            let token = consume_from!(self, [TokenKind::Comma, TokenKind::RightSquare]);
+            if let TokenKind::RightSquare = token.0 {
+                break;
+            }
+        }
+
+        // Check if array can be converted directly to VM::Value
+        // If so, do it
+        let full_of_values = values
+            .iter()
+            .all(|expr| matches!(expr, Expression::Value(_)));
+        if full_of_values {
+            let values = values
+                .into_iter()
+                .map(|expr| match expr {
+                    Expression::Value(value) => value,
+                    _ => unreachable!(),
+                })
+                .collect::<Box<_>>();
+            return Some(Expression::Value(Value::Array(values)));
+        }
+
+        Some(Expression::Array(values.into_boxed_slice()))
+    }
+
+    pub fn parse_vec(&mut self) -> Option<Expression> {
+        // Possible expressions:
+        // [|(expr,)*|]
+        // [|(value,)*|]
+        // [|(expr|value,)*|]
+
+        consume!(self, TokenKind::LeftSquare);
+        consume!(self, TokenKind::Pipe);
+
+        let mut values = Vec::new();
+
+        loop {
+            values.push(self.parse_expression(&ExpressionContext::NoSemicolon)?);
+
+            let token = consume_from!(self, [TokenKind::Comma, TokenKind::Pipe]);
+            if let TokenKind::Pipe = token.0 {
+                break;
+            }
+        }
+
+        consume!(self, TokenKind::RightSquare);
+
+        // Check if vec can be converted directly to VM::Value
+        // If so, do it
+        let full_of_values = values
+            .iter()
+            .all(|expr| matches!(expr, Expression::Value(_)));
+        if full_of_values {
+            let values = values
+                .into_iter()
+                .map(|expr| match expr {
+                    Expression::Value(value) => value,
+                    _ => unreachable!(),
+                })
+                .collect::<Vec<_>>();
+            return Some(Expression::Value(Value::Vector(values)));
+        }
+
+        Some(Expression::Vector(values))
     }
 
     pub fn parse_integer(&mut self) -> Option<Expression> {
@@ -634,11 +772,11 @@ impl<'src> Parser<'src> {
         // - bool
         // - char
         // - string
-        // - type[]             (vec of type)
-        // - type[size]         (array of type)
+        // TODO: - type[]             (vec of type)
+        // TODO: - type[size]         (array of type)
         // - &type              (ref to type)
         // - &mut type          (mut ref to type)
-        // - (type, type, ..)   (tuple of types)
+        // TODO: - (type, type, ..)   (tuple of types)
         let token = consume_from!(self, [TokenKind::Identifier(_), TokenKind::Ampersand]);
 
         let value_type = match token.0 {

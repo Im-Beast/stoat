@@ -21,8 +21,17 @@ pub enum ExpressionContext {
 #[derive(Debug)]
 #[repr(u8)]
 pub enum Expression {
+    // Parsed expression that can be directly converted to VM::Value
     Value(Value),
+    // Number that needs to be typechecked to be parsed properly
     UnknownNumber(Option<NumberPrefix>, NumberSuffix, String),
+
+    // Array, Tuple and Vector cannot be directly converted to VM::Value in most cases
+    // But we still need to handle them with their appropriate type
+    Array(Box<[Expression]>),
+    Tuple(Box<[Expression]>),
+    Vector(Vec<Expression>),
+
     VariableAccess(VariableAccess),
     PropertyAccess(PropertyAccess),
     UnaryOperation(UnaryOperation),
