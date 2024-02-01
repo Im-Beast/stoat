@@ -104,27 +104,31 @@ impl<'src> Lexer<'src> {
 
         let span: Span = span!(start, self.cursor);
 
-        match string.as_str() {
-            "let" => Token(TokenKind::Let, span),
-            "mut" => Token(TokenKind::Mut, span),
-            "fun" => Token(TokenKind::Fun, span),
-            "return" => Token(TokenKind::Return, span),
-            "bail" => Token(TokenKind::Bail, span),
-            "if" => Token(TokenKind::If, span),
-            "else" => Token(TokenKind::Else, span),
-            "loop" => Token(TokenKind::Loop, span),
-            "while" => Token(TokenKind::While, span),
-            "for" => Token(TokenKind::For, span),
-            "in" => Token(TokenKind::In, span),
-            "break" => Token(TokenKind::Break, span),
-            "continue" => Token(TokenKind::Continue, span),
-            "match" => Token(TokenKind::Match, span),
-            "import" => Token(TokenKind::Import, span),
-            "export" => Token(TokenKind::Export, span),
-            "true" => Token(TokenKind::Bool(true), span),
-            "false" => Token(TokenKind::Bool(false), span),
-            _ => Token(TokenKind::Identifier(string), span),
-        }
+        let kind = match string.as_str() {
+            "let" => TokenKind::Let,
+            "mut" => TokenKind::Mut,
+            "fun" => TokenKind::Fun,
+            "return" => TokenKind::Return,
+            "bail" => TokenKind::Bail,
+            "if" => TokenKind::If,
+            "else" => TokenKind::Else,
+            "loop" => TokenKind::Loop,
+            "while" => TokenKind::While,
+            "for" => TokenKind::For,
+            "in" => TokenKind::In,
+            "break" => TokenKind::Break,
+            "continue" => TokenKind::Continue,
+            "match" => TokenKind::Match,
+            "import" => TokenKind::Import,
+            "export" => TokenKind::Export,
+            "true" => TokenKind::Bool(true),
+            "false" => TokenKind::Bool(false),
+            "struct" => TokenKind::Struct,
+            "enum" => TokenKind::Enum,
+            _ => TokenKind::Identifier(string),
+        };
+
+        Token(kind, span)
     }
 
     pub fn lex_number(&mut self) -> Token {

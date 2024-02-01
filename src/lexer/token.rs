@@ -115,6 +115,8 @@ pub enum TokenKind {
     Match,
     Import,
     Export,
+    Struct,
+    Enum,
 
     // Math operators
     Add,      // +
