@@ -8,6 +8,11 @@ pub use token::{NumberPrefix, NumberSuffix, Token, TokenKind};
 
 use shared::{dbg_line, span, span::Span};
 
+// TODO: Make the way things are lexed more consistent
+// Some lex methods lex directly and some call other lexing functions
+// Additionally some mutate cursor with offset from previous functions
+// And some dont
+
 #[derive(Debug, Clone)]
 pub struct Lexer<'src> {
     code: &'src str,
@@ -586,27 +591,16 @@ impl<'src> Lexer<'src> {
     }
 
     pub fn lex_pipe(&mut self) -> Token {
+        self.cursor += 1;
         match self.peek_next(1) {
             Some('|') => self.lex_or(),
-            Some(ch) => self.error(LexerError::UnexpectedCharacter(UnexpectedCharacter {
-                dbg_line: dbg_line!(),
-                actual: *ch,
-                expected: '|',
-                position: span!(self.cursor, self.cursor + 1),
-                src: self.code.to_string(),
-            })),
-            None => self.error(LexerError::UnexpectedEOF(UnexpectedEOF {
-                dbg_line: dbg_line!(),
-                expected: '|',
-                position: span!(self.cursor, self.cursor + 1),
-                src: self.code.to_string(),
-            })),
+            _ => Token(TokenKind::Pipe, span!(self.cursor, self.cursor + 1)),
         }
     }
 
     pub fn lex_or(&mut self) -> Token {
         let start = self.cursor;
-        self.cursor += 2;
+        self.cursor += 1;
         Token(TokenKind::Or, span!(start, self.cursor))
     }
 

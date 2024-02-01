@@ -81,6 +81,7 @@ pub enum TokenKind {
     Dot,         // .
     DoubleDot,   // ..
     Ampersand,   // &
+    Pipe,        // |
 
     // Data types
     Integer(NumberPrefix, NumberSuffix, String),
