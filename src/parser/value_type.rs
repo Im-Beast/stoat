@@ -1,4 +1,5 @@
 use lexer::Token;
+use shared::interner::InternedString;
 use vm::value::Value;
 
 #[derive(Debug)]
@@ -25,7 +26,7 @@ pub enum Type {
     Reference(Box<Type>),
     MutableReference(Box<Type>),
 
-    Vec(Box<Type>),
+    Vector(Box<Type>),
     Array(Box<Type>, u32),
     Tuple(Box<[Type]>),
 
@@ -33,6 +34,8 @@ pub enum Type {
     String,
     Char,
     Pointer,
+
+    Custom(InternedString),
 }
 
 impl From<&Value> for Type {
@@ -67,7 +70,7 @@ impl From<&Value> for Type {
             }
             Value::Vector(values) => {
                 let value_type = values.first().map_or(Type::Unknown, Self::from);
-                Self::Vec(Box::new(value_type))
+                Self::Vector(Box::new(value_type))
             }
         }
     }

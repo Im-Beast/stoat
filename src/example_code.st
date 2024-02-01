@@ -35,15 +35,14 @@ let test = !false;
 
 let implicit_tuple = (1i32, 2i32, 3i32);
 let implicit_tuple = (1+2, 3i32, "dog");
-// let explicit_tuple: (i32, i32, i32) = (1, 2, 3);
+let explicit_tuple: (i32, i32, i32) = (1, 2, 3);
 
 let implicit_arr = [1i32, 2i32, 3i32];
 let implicit_arr = [1+2, 2, 5i32];
-// let explicit_arr: i32[3] = [1, 2, 3];
+let explicit_arr: i32[3] = [1, 2, 3];
 
 let implicit_vec = [|1i32, 2i32|];
-// let explicit_vec: i32[] = [|1, 2|];
-
+let explicit_vec: i32[] = [|1, 2|];
 
 "dog";
 

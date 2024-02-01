@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use miette::{Result, SourceSpan};
 
 use expression::{ExpressionContext, VariableAccess};
-use lexer::{NumberSuffix, Token, TokenKind};
+use lexer::{NumberPrefix, NumberSuffix, Token, TokenKind};
 use shared::{dbg_line, interner::Interner, span::Span};
 use vm::value::Value;
 
@@ -772,51 +772,118 @@ impl<'src> Parser<'src> {
         // - bool
         // - char
         // - string
-        // TODO: - type[]             (vec of type)
-        // TODO: - type[size]         (array of type)
+        // - type[]             (vec of type)
+        // - type[size]         (array of type)
         // - &type              (ref to type)
         // - &mut type          (mut ref to type)
-        // TODO: - (type, type, ..)   (tuple of types)
-        let token = consume_from!(self, [TokenKind::Identifier(_), TokenKind::Ampersand]);
+        // - (type, type, ..)   (tuple of types)
+        let token = peek_from!(
+            self,
+            [
+                TokenKind::Identifier(_),
+                TokenKind::Ampersand,
+                TokenKind::LeftParen
+            ]
+        );
 
-        let value_type = match token.0 {
-            TokenKind::Identifier(identifier) => match identifier.as_str() {
-                "i8" => Type::I8,
-                "i16" => Type::I16,
-                "i32" => Type::I32,
-                "i64" => Type::I64,
-
-                "u8" => Type::U8,
-                "u16" => Type::U16,
-                "u32" => Type::U32,
-                "u64" => Type::U64,
-
-                "f32" => Type::F32,
-                "f64" => Type::F64,
-
-                "bool" => Type::Bool,
-                "char" => Type::Char,
-                "string" => Type::String,
-
-                ident => todo!("Type for identifier: {}", ident),
-            },
-            TokenKind::Ampersand => {
-                match self.peek() {
-                    Some(Token(TokenKind::Mut, _)) => {
-                        consume!(self, TokenKind::Mut); // mut
-                        let value_type = self.parse_type()?;
-                        Type::MutableReference(Box::new(value_type))
-                    }
-                    _ => {
-                        let value_type = self.parse_type()?;
-                        Type::Reference(Box::new(value_type))
-                    }
-                }
-            }
+        let mut value_type = match token.0 {
+            TokenKind::Identifier(_) => self.parse_identifier_type()?,
+            TokenKind::Ampersand => self.parse_reference_type()?,
+            TokenKind::LeftParen => self.parse_tuple_type()?,
             _ => unreachable!(),
         };
 
+        // Array or Vector
+        if let TokenKind::LeftSquare = self.peek()?.0 {
+            consume!(self, TokenKind::LeftSquare);
+            let token = consume_from!(self, [TokenKind::RightSquare, TokenKind::Integer(..)]);
+
+            if let TokenKind::Integer(prefix, suffix, number) = token.0 {
+                if !matches!(prefix, NumberPrefix::None) || !matches!(suffix, NumberSuffix::None) {
+                    // TODO: Number in array can't have prefixes and/or suffixes
+                    return None;
+                }
+
+                let Ok(size) = number.parse::<u32>() else {
+                    // TODO: Invalid array size error
+                    return None;
+                };
+
+                consume!(self, TokenKind::RightSquare);
+
+                value_type = Type::Array(Box::new(value_type), size);
+            } else {
+                value_type = Type::Vector(Box::new(value_type));
+            }
+        }
+
         Some(value_type)
+    }
+
+    pub fn parse_identifier_type(&mut self) -> Option<Type> {
+        let identifier = consume!(
+            self,
+            TokenKind::Identifier(identifier) => identifier
+        );
+
+        let value_type = match identifier.as_str() {
+            "i8" => Type::I8,
+            "i16" => Type::I16,
+            "i32" => Type::I32,
+            "i64" => Type::I64,
+
+            "u8" => Type::U8,
+            "u16" => Type::U16,
+            "u32" => Type::U32,
+            "u64" => Type::U64,
+
+            "f32" => Type::F32,
+            "f64" => Type::F64,
+
+            "bool" => Type::Bool,
+            "char" => Type::Char,
+            "string" => Type::String,
+
+            identifier => {
+                let interned_ident = self.interner.intern(&identifier);
+                Type::Custom(interned_ident)
+            }
+        };
+
+        Some(value_type)
+    }
+
+    pub fn parse_reference_type(&mut self) -> Option<Type> {
+        let value_type = if let TokenKind::Mut = self.peek()?.0 {
+            consume!(self, TokenKind::Mut); // mut
+            let value_type = self.parse_type()?;
+            Type::MutableReference(Box::new(value_type))
+        } else {
+            let value_type = self.parse_type()?;
+            Type::Reference(Box::new(value_type))
+        };
+
+        Some(value_type)
+    }
+
+    pub fn parse_tuple_type(&mut self) -> Option<Type> {
+        // Possible types:
+        // ((type,)*)
+
+        consume!(self, TokenKind::LeftParen);
+
+        let mut types = Vec::new();
+
+        loop {
+            types.push(self.parse_type()?);
+
+            let token = consume_from!(self, [TokenKind::Comma, TokenKind::RightParen]);
+            if let TokenKind::RightParen = token.0 {
+                break;
+            }
+        }
+
+        Some(Type::Tuple(types.into_boxed_slice()))
     }
 
     pub fn parse_variable_declaration(&mut self) -> Option<Statement> {
