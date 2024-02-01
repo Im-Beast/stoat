@@ -51,11 +51,24 @@ impl From<&Value> for Type {
             Value::F32(_) => Self::F32,
             Value::F64(_) => Self::F64,
 
+            Value::Pointer(_) => Self::Pointer,
+
             Value::Bool(_) => Self::Bool,
             Value::String(_) => Self::String,
             Value::Char(_) => Self::Char,
 
-            Value::Pointer(_) => Self::Pointer,
+            Value::Array(values) => {
+                let value_type = values.first().map_or(Type::Unknown, Self::from);
+                Self::Array(Box::new(value_type), values.len() as u32)
+            }
+            Value::Tuple(values) => {
+                let value_types = values.iter().map(Self::from).collect::<Box<_>>();
+                Self::Tuple(value_types)
+            }
+            Value::Vector(values) => {
+                let value_type = values.first().map_or(Type::Unknown, Self::from);
+                Self::Vec(Box::new(value_type))
+            }
         }
     }
 }
