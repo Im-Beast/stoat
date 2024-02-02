@@ -44,6 +44,7 @@ pub enum Expression {
     ExplicitReturn(Return),
     Contained(Contained),
     StructInitialization(StructInitialization),
+    EnumInitialization(EnumInitialization),
 }
 
 #[derive(Debug)]
@@ -120,4 +121,11 @@ pub struct StructInitializationField {
 pub struct StructInitialization {
     pub identifier: InternedString,
     pub fields: Box<[StructInitializationField]>,
+}
+
+#[derive(Debug)]
+pub struct EnumInitialization {
+    pub identifier: InternedString,
+    pub variant: InternedString,
+    pub fields: Option<Box<[Expression]>>,
 }

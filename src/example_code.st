@@ -91,6 +91,19 @@ let dog = Dog { woof: false };
 
 dog.woof = true;
 
+enum Animal {
+  Dog(AnimalID, string),
+  Cat(AnimalID, string)
+}
+
+enum AnimalID {
+  Dog = 0,
+  Cat = 1
+}
+
+let pupper = Animal::Dog(AnimalID::Dog, "woofer junior");
+let kitty = Animal::Cat(AnimalID::Cat, "meowser");
+
 let x = if true {
   dog();
 } else {

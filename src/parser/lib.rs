@@ -28,10 +28,13 @@ use value_type::Type;
 use crate::{
     error::InvalidFloatSuffix,
     expression::{
-        BinaryOperation, Contained, Function, Return, StructInitialization,
+        BinaryOperation, Contained, EnumInitialization, Function, Return, StructInitialization,
         StructInitializationField, UnaryOperation,
     },
-    statement::{StructDeclaration, StructDeclarationField},
+    statement::{
+        EnumDeclaration, EnumDeclarationField, EnumDeclarationVariant, StructDeclaration,
+        StructDeclarationField,
+    },
 };
 
 #[derive(Debug)]
@@ -340,7 +343,6 @@ impl<'src> Parser<'src> {
                     });
                 }
 
-                // Call
                 Some(Token(TokenKind::LeftParen, _)) => {
                     consume!(self, TokenKind::LeftParen);
 
@@ -445,6 +447,7 @@ impl<'src> Parser<'src> {
             TokenKind::LeftCurly if matches!(context, ExpressionContext::Default) => {
                 self.parse_struct_initialization()?
             }
+            TokenKind::DoubleColon => self.parse_enum_initialization()?,
             _ => self.parse_variable_access_expression()?,
         };
 
@@ -1074,6 +1077,108 @@ impl<'src> Parser<'src> {
         }))
     }
 
+    pub fn parse_enum_initialization(&mut self) -> Option<Expression> {
+        // Possible expressions:
+        // ident::ident
+        // ident::ident((value_type,)+)
+
+        let identifier = consume!(self, TokenKind::Identifier(identifier) => identifier);
+        let interned_ident = self.interner.intern(&identifier);
+
+        consume!(self, TokenKind::DoubleColon);
+
+        let variant_identifier = consume!(self, TokenKind::Identifier(identifier) => identifier);
+        let interned_variant_ident = self.interner.intern(&variant_identifier);
+
+        let fields = if matches!(self.peek()?.0, TokenKind::LeftParen) {
+            let mut fields = Vec::new();
+
+            consume!(self, TokenKind::LeftParen);
+            loop {
+                fields.push(self.parse_expression(&ExpressionContext::NoSemicolon)?);
+
+                let token = consume_from!(self, [TokenKind::Comma, TokenKind::RightParen]);
+                if let TokenKind::RightParen = token.0 {
+                    break;
+                }
+            }
+
+            Some(fields.into_boxed_slice())
+        } else {
+            None
+        };
+
+        Some(Expression::EnumInitialization(EnumInitialization {
+            identifier: interned_ident,
+            variant: interned_variant_ident,
+            fields,
+        }))
+    }
+
+    pub fn parse_enum_declaration(&mut self) -> Option<Statement> {
+        // Possible statements:
+        // enum identifier { (ident,)* }                  // Fieldless enum
+        // enum identifier { (ident = value,)* }          // Fieldless enum with explicit discriminants
+        // enum identifier { (ident\((value_type,)*\)) }  // Enum with fields
+
+        consume!(self, TokenKind::Enum);
+
+        let identifier = consume!(self, TokenKind::Identifier(identifier) => identifier);
+        let interned_ident = self.interner.intern(&identifier);
+
+        consume!(self, TokenKind::LeftCurly);
+
+        let mut variants = Vec::new();
+        loop {
+            let variant_identifier =
+                consume!(self, TokenKind::Identifier(identifier) => identifier);
+            let interned_variant_ident = self.interner.intern(&variant_identifier);
+
+            let fields = if matches!(self.peek()?.0, TokenKind::LeftParen) {
+                let mut fields = Vec::new();
+
+                consume!(self, TokenKind::LeftParen);
+                loop {
+                    fields.push(EnumDeclarationField {
+                        value_type: self.parse_type()?,
+                    });
+
+                    let token = consume_from!(self, [TokenKind::Comma, TokenKind::RightParen]);
+                    if let TokenKind::RightParen = token.0 {
+                        break;
+                    }
+                }
+
+                Some(fields.into_boxed_slice())
+            } else {
+                None
+            };
+
+            let discriminant = if matches!(self.peek()?.0, TokenKind::Equals) {
+                self.consume_any();
+                self.parse_value_expression()
+            } else {
+                None
+            };
+
+            variants.push(EnumDeclarationVariant {
+                identifier: interned_variant_ident,
+                discriminant,
+                fields,
+            });
+
+            let token = consume_from!(self, [TokenKind::Comma, TokenKind::RightCurly]);
+            if let TokenKind::RightCurly = token.0 {
+                break;
+            }
+        }
+
+        Some(Statement::EnumDeclaration(EnumDeclaration {
+            identifier: interned_ident,
+            variants: variants.into_boxed_slice(),
+        }))
+    }
+
     pub fn parse_statement(&mut self, context: &ExpressionContext) -> Option<Statement> {
         let next = self.peek()?;
 
@@ -1095,7 +1200,7 @@ impl<'src> Parser<'src> {
             TokenKind::LeftCurly => self.parse_block_statement()?,
 
             TokenKind::Struct => self.parse_struct_declaration()?,
-            TokenKind::Enum => todo!("Enum"),
+            TokenKind::Enum => self.parse_enum_declaration()?,
 
             token => todo!("Token: {:?}", token),
         };
