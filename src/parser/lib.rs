@@ -27,7 +27,11 @@ use value_type::Type;
 
 use crate::{
     error::InvalidFloatSuffix,
-    expression::{BinaryOperation, Contained, Function, Return, UnaryOperation},
+    expression::{
+        BinaryOperation, Contained, Function, Return, StructInitialization,
+        StructInitializationField, UnaryOperation,
+    },
+    statement::{StructDeclaration, StructDeclarationField},
 };
 
 #[derive(Debug)]
@@ -223,10 +227,11 @@ impl<'src> Parser<'src> {
         // Possible expressions:
         // value
         // variable_access
-        // expr (op expr)*                                      (binary operation)
-        // expr.ident                                           (property access)
+        // expr (op expr)*                                        (binary operation)
+        // expr.ident                                             (property access)
         // if cond { ...stmt[]; expr? } else { ...stmt[]; expr? } (if expression)
-        // { ...stmt[]; expr? }                                  (block)
+        // { ...stmt[]; expr? }                                   (block)
+        // identifier { (identifier: expr)+ }                     (enum initialization)
 
         let mut expression_stack = Vec::new();
 
@@ -298,7 +303,7 @@ impl<'src> Parser<'src> {
         Some(expression)
     }
 
-    pub fn parse_operand(&mut self) -> Option<Expression> {
+    pub fn parse_operand(&mut self, context: &ExpressionContext) -> Option<Expression> {
         // Possible operands:
         // value
         // variable_access
@@ -313,7 +318,7 @@ impl<'src> Parser<'src> {
 
         let mut expression = match token.0 {
             TokenKind::If => self.parse_if_expression()?,
-            TokenKind::Identifier(_) => self.parse_identifier_expression()?,
+            TokenKind::Identifier(_) => self.parse_identifier_expression(context)?,
             value_pattern!() => self.parse_value_expression()?,
             _ => unreachable!(),
         };
@@ -335,6 +340,7 @@ impl<'src> Parser<'src> {
                     });
                 }
 
+                // Call
                 Some(Token(TokenKind::LeftParen, _)) => {
                     consume!(self, TokenKind::LeftParen);
 
@@ -387,7 +393,7 @@ impl<'src> Parser<'src> {
             }
             TokenKind::LeftParen => {
                 // Either a contained expression or a tuple
-                let operand = self.parse_operand()?;
+                let operand = self.parse_operand(context)?;
 
                 let operand = match operand {
                     // If the expression is a tuple with only one item
@@ -408,7 +414,7 @@ impl<'src> Parser<'src> {
                     expression: Box::new(operand),
                 }));
             }
-            _ => return self.parse_operand(),
+            _ => return self.parse_operand(context),
         };
 
         let operand = self.parse_operand_with_unary_operators(context)?;
@@ -427,23 +433,30 @@ impl<'src> Parser<'src> {
         })))
     }
 
-    pub fn parse_identifier_expression(&mut self) -> Option<Expression> {
+    pub fn parse_identifier_expression(
+        &mut self,
+        context: &ExpressionContext,
+    ) -> Option<Expression> {
         // Possible expressions:
-        // ident           (variable access)
-        // ident((expr,)*) (function call)
+        // identifier                           (variable access)
+        // identifier { (identifier: expr,)+ }  (struct initialization)
 
-        let identifier = consume!(self, TokenKind::Identifier(identifier) => identifier);
-        let interned_ident = self.interner.intern(&identifier);
-
-        let token = self.peek();
-
-        let expression = match token {
-            _ => Expression::VariableAccess(VariableAccess {
-                identifier: interned_ident,
-            }),
+        let expression = match self.peek_next(1)?.0 {
+            TokenKind::LeftCurly if matches!(context, ExpressionContext::Default) => {
+                self.parse_struct_initialization()?
+            }
+            _ => self.parse_variable_access_expression()?,
         };
 
         Some(expression)
+    }
+
+    pub fn parse_variable_access_expression(&mut self) -> Option<Expression> {
+        let identifier = consume!(self, TokenKind::Identifier(identifier) => identifier);
+        let interned_ident = self.interner.intern(&identifier);
+        Some(Expression::VariableAccess(VariableAccess {
+            identifier: interned_ident,
+        }))
     }
 
     pub fn parse_if_statement(&mut self) -> Option<Statement> {
@@ -990,6 +1003,77 @@ impl<'src> Parser<'src> {
         Some(Statement::Expression(self.parse_function_expression()?))
     }
 
+    pub fn parse_struct_initialization(&mut self) -> Option<Expression> {
+        // Possible expressions:
+        // identifier { (ident: expr,)+ }
+
+        let identifier = consume!(self, TokenKind::Identifier(identifier) => identifier);
+        let interned_ident = self.interner.intern(&identifier);
+
+        consume!(self, TokenKind::LeftCurly);
+
+        let mut fields = Vec::new();
+        loop {
+            // ident: expr
+            let identifier = consume!(self, TokenKind::Identifier(identifier) => identifier);
+            let interned_ident = self.interner.intern(&identifier);
+            consume!(self, TokenKind::Colon);
+
+            let expression = self.parse_expression(&ExpressionContext::NoSemicolon)?;
+
+            fields.push(StructInitializationField {
+                identifier: interned_ident,
+                expression,
+            });
+
+            let token = consume_from!(self, [TokenKind::Comma, TokenKind::RightCurly]);
+            if let TokenKind::RightCurly = token.0 {
+                break;
+            }
+        }
+
+        Some(Expression::StructInitialization(StructInitialization {
+            identifier: interned_ident,
+            fields: fields.into_boxed_slice(),
+        }))
+    }
+
+    pub fn parse_struct_declaration(&mut self) -> Option<Statement> {
+        // Possible statements:
+        // struct identifier { (ident: type,)+ }
+
+        consume!(self, TokenKind::Struct);
+
+        let identifier = consume!(self, TokenKind::Identifier(identifier) => identifier);
+        let interned_ident = self.interner.intern(&identifier);
+
+        consume!(self, TokenKind::LeftCurly);
+
+        let mut fields = Vec::new();
+        loop {
+            // ident: type
+            let identifier = consume!(self, TokenKind::Identifier(identifier) => identifier);
+            let interned_ident = self.interner.intern(&identifier);
+            consume!(self, TokenKind::Colon);
+            let value_type = self.parse_type()?;
+
+            fields.push(StructDeclarationField {
+                identifier: interned_ident,
+                value_type,
+            });
+
+            let token = consume_from!(self, [TokenKind::Comma, TokenKind::RightCurly]);
+            if let TokenKind::RightCurly = token.0 {
+                break;
+            }
+        }
+
+        Some(Statement::StructDeclaration(StructDeclaration {
+            identifier: interned_ident,
+            fields: fields.into_boxed_slice(),
+        }))
+    }
+
     pub fn parse_statement(&mut self, context: &ExpressionContext) -> Option<Statement> {
         let next = self.peek()?;
 
@@ -1009,6 +1093,9 @@ impl<'src> Parser<'src> {
             TokenKind::If => self.parse_if_statement()?,
             TokenKind::Fun => self.parse_function_statement()?,
             TokenKind::LeftCurly => self.parse_block_statement()?,
+
+            TokenKind::Struct => self.parse_struct_declaration()?,
+            TokenKind::Enum => todo!("Enum"),
 
             token => todo!("Token: {:?}", token),
         };

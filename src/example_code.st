@@ -83,13 +83,11 @@ add(1, 2);
   1
 }
 
-/*
 struct Dog {
   woof: bool
 }
 
-let dog = Dog { woof: false }
-*/
+let dog = Dog { woof: false };
 
 dog.woof = true;
 

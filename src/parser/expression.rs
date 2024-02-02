@@ -43,6 +43,7 @@ pub enum Expression {
     ImplicitReturn(Return),
     ExplicitReturn(Return),
     Contained(Contained),
+    StructInitialization(StructInitialization),
 }
 
 #[derive(Debug)]
@@ -107,4 +108,16 @@ pub struct Return {
 #[repr(transparent)]
 pub struct Contained {
     pub expression: Box<Expression>,
+}
+
+#[derive(Debug)]
+pub struct StructInitializationField {
+    pub identifier: InternedString,
+    pub expression: Expression,
+}
+
+#[derive(Debug)]
+pub struct StructInitialization {
+    pub identifier: InternedString,
+    pub fields: Box<[StructInitializationField]>,
 }
