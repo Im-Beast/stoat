@@ -144,8 +144,8 @@ impl<'src> Lexer<'src> {
         let start = self.cursor;
         let mut string = string_with_match_pattern!(self, '0'..='9');
 
-        match self.peek() {
-            Some('.') => {
+        match (self.peek(), self.peek_next(1)) {
+            (Some('.'), Some('0'..='9')) => {
                 self.cursor += 1;
                 string.push('.');
                 let string = string_with_match_pattern!(self, string, '0'..='9');
@@ -369,7 +369,7 @@ impl<'src> Lexer<'src> {
     }
 
     pub fn lex_plus(&mut self) -> Token {
-        match self.peek() {
+        match self.peek_next(1) {
             Some('=') => self.lex_add_assign(),
             _ => self.lex_add(),
         }
@@ -434,7 +434,7 @@ impl<'src> Lexer<'src> {
     }
 
     pub fn lex_equals(&mut self) -> Token {
-        match self.peek() {
+        match self.peek_next(1) {
             Some('=') => self.lex_equals_equals(),
             _ => self.lex_assign(),
         }
@@ -453,6 +453,7 @@ impl<'src> Lexer<'src> {
     }
 
     pub fn lex_right_pointy_bracket(&mut self) -> Token {
+        self.cursor += 1;
         match self.peek() {
             Some('=') => self.lex_greater_than_or_equal(),
             _ => self.lex_greater_than(),
@@ -612,10 +613,16 @@ impl<'src> Lexer<'src> {
         let start = self.cursor;
         self.cursor += 1;
         match self.peek() {
-            Some('.') => {
-                self.cursor += 1;
-                Token(TokenKind::DoubleDot, span!(start, self.cursor))
-            }
+            Some('.') => match self.peek_next(1) {
+                Some('=') => {
+                    self.cursor += 2;
+                    Token(TokenKind::DoubleDotEquals, span!(start, self.cursor))
+                }
+                _ => {
+                    self.cursor += 1;
+                    Token(TokenKind::DoubleDot, span!(start, self.cursor))
+                }
+            },
             _ => Token(TokenKind::Dot, span!(start, self.cursor)),
         }
     }

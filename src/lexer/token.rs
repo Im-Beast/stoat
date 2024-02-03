@@ -74,14 +74,15 @@ pub enum TokenKind {
     BlockComment(String),
 
     // Punctuation
-    Semicolon,   // ;
-    Colon,       // :
-    DoubleColon, // ::
-    Comma,       // ,
-    Dot,         // .
-    DoubleDot,   // ..
-    Ampersand,   // &
-    Pipe,        // |
+    Semicolon,       // ;
+    Colon,           // :
+    DoubleColon,     // ::
+    Comma,           // ,
+    Dot,             // .
+    DoubleDot,       // ..
+    DoubleDotEquals, // ..=
+    Ampersand,       // &
+    Pipe,            // |
 
     // Data types
     Integer(NumberPrefix, NumberSuffix, String),
