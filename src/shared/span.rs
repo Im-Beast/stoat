@@ -29,8 +29,4 @@ macro_rules! span {
     ($start:expr, $end:expr) => {
         ($start, $end - $start).into()
     };
-
-    (absolute; $start: expr, $len: expr) => {
-        ($start, $end).into()
-    };
 }
