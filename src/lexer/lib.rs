@@ -6,12 +6,17 @@ use error::{LexerError, UnexpectedCharacter, UnexpectedEOF, UnsupportedNumberSuf
 mod token;
 pub use token::{NumberPrefix, NumberSuffix, Token, TokenKind};
 
-use shared::{dbg_line, span, span::Span};
+use shared::{dbg_line, span};
 
-// TODO: Make the way things are lexed more consistent
-// Some lex methods lex directly and some call other lexing functions
-// Additionally some mutate cursor with offset from previous functions
-// And some dont
+// For future lex thingies:
+// If a token is consisting of more than 1 character:
+//
+// Create a `lex_char_name` method which:
+//  - Uses peek_next(1) to determine the next character
+//  - Matches that peeked character to determine what
+//    needs to be lexed and calls the `lex_actual_token` method.
+//    (if `char_name` is the same as `token` name, just name it the same with `_token` suffix (e.g. `lex_dot_token`))
+//  - Only the `lex_actual_token` method should mutate the cursor.
 
 #[derive(Debug, Clone)]
 pub struct Lexer<'src> {
@@ -25,6 +30,39 @@ pub struct Lexer<'src> {
 pub struct LexerResult {
     pub tokens: VecDeque<Token>,
     pub errors: Vec<LexerError>,
+}
+
+macro_rules! unexpected_eof {
+    ($self:expr, $start:expr,  $expected:expr) => {
+        $self.error(LexerError::UnexpectedEOF(UnexpectedEOF {
+            dbg_line: dbg_line!(),
+            expected: $expected,
+            position: span!($start, $self.cursor),
+            src: $self.code.to_string(),
+        }))
+    };
+}
+
+macro_rules! unexpected_char {
+    ($self:expr, $start: expr, $actual:expr, $expected:expr) => {
+        $self.error(LexerError::UnexpectedCharacter(UnexpectedCharacter {
+            dbg_line: dbg_line!(),
+            expected: $expected,
+            actual: $actual,
+            position: span!($start, $self.cursor),
+            src: $self.code.to_string(),
+        }))
+    };
+
+    ($self:expr, $start:expr, $end:expr, $actual:expr, $expected:expr) => {
+        $self.error(LexerError::UnexpectedCharacter(UnexpectedCharacter {
+            dbg_line: dbg_line!(),
+            expected: $expected,
+            actual: $actual,
+            position: span!($start, $end),
+            src: $self.code.to_string(),
+        }))
+    };
 }
 
 macro_rules! string_with_match_pattern {
@@ -74,20 +112,17 @@ impl<'src> Lexer<'src> {
         self.errors.push(error);
 
         // TODO: Try to recover from error and continue lexing
-        // The idea is to try finding as many errors as possible in one go (if possible)
-        if self.cursor < self.chars.len() {
-            let start = self.cursor;
+        // The idea is to try finding as many errors as possible in one go (whenever possible)
+        let start = self.cursor;
+
+        let kind = if self.cursor < self.chars.len() {
             self.cursor = self.chars.len();
-            Token(
-                TokenKind::Garbage(Some(self.chars[start..].iter().collect())),
-                span!(start, self.cursor),
-            )
+            TokenKind::Garbage(Some(self.chars[start..].iter().collect()))
         } else {
-            Token(
-                TokenKind::Garbage(None),
-                span!(self.cursor, self.chars.len()),
-            )
-        }
+            TokenKind::Garbage(None)
+        };
+
+        Token(kind, span!(start, self.cursor))
     }
 
     pub fn peek(&self) -> Option<&char> {
@@ -100,9 +135,10 @@ impl<'src> Lexer<'src> {
 
     pub fn lex_ident_or_keyword(&mut self) -> Token {
         let start = self.cursor;
-        let string = string_with_match_pattern!(self, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_');
-
-        let span: Span = span!(start, self.cursor);
+        let string = string_with_match_pattern!(
+            self,
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '_'
+        );
 
         let kind = match string.as_str() {
             "let" => TokenKind::Let,
@@ -128,7 +164,7 @@ impl<'src> Lexer<'src> {
             _ => TokenKind::Identifier(string),
         };
 
-        Token(kind, span)
+        Token(kind, span!(start, self.cursor))
     }
 
     pub fn lex_number(&mut self) -> Token {
@@ -254,27 +290,15 @@ impl<'src> Lexer<'src> {
 
     pub fn lex_char(&mut self) -> Token {
         let start = self.cursor;
-        self.cursor += 1; // Skip '
-
+        self.cursor += 1;
         match (self.peek(), self.peek_next(1)) {
             (Some(ch), Some('\'')) => {
                 let ch = *ch;
                 self.cursor += 2;
                 Token(TokenKind::Char(ch), span!(start, self.cursor))
             }
-            (_, Some(end)) => self.error(LexerError::UnexpectedCharacter(UnexpectedCharacter {
-                dbg_line: dbg_line!(),
-                actual: *end,
-                expected: '\'',
-                position: span!(start + 2, self.cursor + 2),
-                src: self.code.to_string(),
-            })),
-            _ => self.error(LexerError::UnexpectedEOF(UnexpectedEOF {
-                dbg_line: dbg_line!(),
-                expected: '\'',
-                position: span!(start, self.cursor),
-                src: self.code.to_string(),
-            })),
+            (_, Some(end)) => unexpected_char!(self, start + 2, self.cursor + 2, *end, '\''),
+            _ => unexpected_eof!(self, start, '\''),
         }
     }
 
@@ -316,21 +340,24 @@ impl<'src> Lexer<'src> {
         let mut string = String::new();
         loop {
             match self.peek() {
-                Some('*') => {
-                    self.cursor += 1;
-                    match self.peek() {
-                        Some('/') => {
-                            self.cursor += 1;
-                            break;
-                        }
-                        _ => string.push('*'),
+                Some('*') => match self.peek_next(1) {
+                    Some('/') => {
+                        self.cursor += 2;
+                        break;
                     }
-                }
+                    _ => {
+                        string.push('*');
+                        self.cursor += 1;
+                    }
+                },
                 Some(ch) => {
                     string.push(*ch);
-                    self.cursor += 1
+                    self.cursor += 1;
                 }
-                None => break,
+                _ => {
+                    unexpected_eof!(self, start, '*');
+                    break;
+                }
             }
         }
 
@@ -350,7 +377,7 @@ impl<'src> Lexer<'src> {
     }
 
     pub fn lex_asterisk(&mut self) -> Token {
-        match self.peek() {
+        match self.peek_next(1) {
             Some('=') => self.lex_multiply_assign(),
             _ => self.lex_multiply(),
         }
@@ -387,7 +414,6 @@ impl<'src> Lexer<'src> {
         Token(TokenKind::Add, span!(start, self.cursor))
     }
 
-    // lex_minus with methods for lex_subtract and lex_subtract_assign
     pub fn lex_minus(&mut self) -> Token {
         match self.peek_next(1) {
             Some('=') => self.lex_subtract_assign(),
@@ -415,7 +441,7 @@ impl<'src> Lexer<'src> {
     }
 
     pub fn lex_percent(&mut self) -> Token {
-        match self.peek() {
+        match self.peek_next(1) {
             Some('=') => self.lex_modulo_assign(),
             _ => self.lex_modulo(),
         }
@@ -453,8 +479,7 @@ impl<'src> Lexer<'src> {
     }
 
     pub fn lex_right_pointy_bracket(&mut self) -> Token {
-        self.cursor += 1;
-        match self.peek() {
+        match self.peek_next(1) {
             Some('=') => self.lex_greater_than_or_equal(),
             _ => self.lex_greater_than(),
         }
@@ -540,7 +565,6 @@ impl<'src> Lexer<'src> {
         Token(TokenKind::Bail, span!(start, self.cursor))
     }
 
-    // lex_exclamation_mark with methods for lex_not and lex_not_equals
     pub fn lex_exclamation_mark(&mut self) -> Token {
         match self.peek_next(1) {
             Some('=') => self.lex_not_equals(),
@@ -575,68 +599,88 @@ impl<'src> Lexer<'src> {
     }
 
     pub fn lex_ampersand(&mut self) -> Token {
+        match self.peek_next(1) {
+            Some('&') => self.lex_and(),
+            _ => self.lex_ampersand_token(),
+        }
+    }
+
+    pub fn lex_ampersand_token(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 1;
-        match self.peek() {
-            Some('&') => self.lex_and(),
-            Some(_) => Token(TokenKind::Ampersand, span!(start, self.cursor)),
-            None => self.error(LexerError::UnexpectedEOF(UnexpectedEOF {
-                dbg_line: dbg_line!(),
-                expected: '&',
-                position: span!(self.cursor, self.cursor + 1),
-                src: self.code.to_string(),
-            })),
-        }
+        Token(TokenKind::Ampersand, span!(start, self.cursor))
     }
 
     pub fn lex_and(&mut self) -> Token {
         let start = self.cursor;
-        self.cursor += 1;
+        self.cursor += 2;
         Token(TokenKind::And, span!(start, self.cursor))
     }
 
     pub fn lex_pipe(&mut self) -> Token {
-        self.cursor += 1;
         match self.peek_next(1) {
             Some('|') => self.lex_or(),
-            _ => Token(TokenKind::Pipe, span!(self.cursor, self.cursor + 1)),
+            _ => self.lex_pipe_token(),
         }
+    }
+
+    pub fn lex_pipe_token(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 1;
+        Token(TokenKind::Pipe, span!(start, self.cursor))
     }
 
     pub fn lex_or(&mut self) -> Token {
         let start = self.cursor;
-        self.cursor += 1;
+        self.cursor += 2;
         Token(TokenKind::Or, span!(start, self.cursor))
     }
 
     pub fn lex_dot(&mut self) -> Token {
-        let start = self.cursor;
-        self.cursor += 1;
-        match self.peek() {
-            Some('.') => match self.peek_next(1) {
-                Some('=') => {
-                    self.cursor += 2;
-                    Token(TokenKind::DoubleDotEquals, span!(start, self.cursor))
-                }
-                _ => {
-                    self.cursor += 1;
-                    Token(TokenKind::DoubleDot, span!(start, self.cursor))
-                }
+        match self.peek_next(1) {
+            Some('.') => match self.peek_next(2) {
+                Some('=') => self.lex_double_dot_equals(),
+                _ => self.lex_double_dot(),
             },
-            _ => Token(TokenKind::Dot, span!(start, self.cursor)),
+            _ => self.lex_dot_token(),
         }
     }
 
-    pub fn lex_colon(&mut self) -> Token {
+    pub fn lex_double_dot_equals(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 3;
+        Token(TokenKind::DoubleDotEquals, span!(start, self.cursor))
+    }
+
+    pub fn lex_double_dot(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 2;
+        Token(TokenKind::DoubleDot, span!(start, self.cursor))
+    }
+
+    pub fn lex_dot_token(&mut self) -> Token {
         let start = self.cursor;
         self.cursor += 1;
-        match self.peek() {
-            Some(':') => {
-                self.cursor += 1;
-                Token(TokenKind::DoubleColon, span!(start, self.cursor))
-            }
-            _ => Token(TokenKind::Colon, span!(start, self.cursor)),
+        Token(TokenKind::Dot, span!(start, self.cursor))
+    }
+
+    pub fn lex_colon(&mut self) -> Token {
+        match self.peek_next(1) {
+            Some(':') => self.lex_double_colon(),
+            _ => self.lex_colon_token(),
         }
+    }
+
+    pub fn lex_double_colon(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 2;
+        Token(TokenKind::DoubleColon, span!(start, self.cursor))
+    }
+
+    pub fn lex_colon_token(&mut self) -> Token {
+        let start = self.cursor;
+        self.cursor += 1;
+        Token(TokenKind::Colon, span!(start, self.cursor))
     }
 
     pub fn lex_comma(&mut self) -> Token {
@@ -696,9 +740,140 @@ impl Iterator for Lexer<'_> {
                 self.cursor += 1;
                 return self.next();
             }
+
             _ => None?,
         };
 
         Some(token)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dont_lex_invalid_integers() {
+        let invalid_suffixes = ["i", "u", "f", "i82", "i69", "u23"];
+        for invalid_suffix in invalid_suffixes {
+            let code = format!("{}{}", "123", invalid_suffix);
+
+            let lexer = Lexer::new(&code);
+            let errors = lexer.lex().errors;
+
+            assert_eq!(errors.len(), 1);
+
+            assert!(matches!(
+                &errors[0],
+                LexerError::UnsupportedNumberSuffix(UnsupportedNumberSuffix { .. })
+            ));
+        }
+    }
+
+    #[test]
+    fn lex_other_tokens() {
+        // The order is the same as in token.rs
+
+        #[rustfmt::skip]
+        let tokens = [
+            ("identifier", TokenKind::Identifier("identifier".to_string())),
+
+            ("//comment", TokenKind::LineComment("comment".to_string())),
+            ("/*comment*/", TokenKind::BlockComment("comment".to_string())),
+            
+            (";", TokenKind::Semicolon),
+            (":", TokenKind::Colon),
+            ("::", TokenKind::DoubleColon),
+            (",", TokenKind::Comma),
+            (".", TokenKind::Dot),
+            ("..", TokenKind::DoubleDot),
+            ("..=", TokenKind::DoubleDotEquals),
+            ("&", TokenKind::Ampersand),
+            ("|", TokenKind::Pipe),
+
+            ("69", TokenKind::Integer(NumberPrefix::None, NumberSuffix::None, "69".to_string())),
+            ("69i32", TokenKind::Integer(NumberPrefix::None, NumberSuffix::I32, "69".to_string())),
+            ("69u32", TokenKind::Integer(NumberPrefix::None, NumberSuffix::U32, "69".to_string())),
+            ("69f32", TokenKind::Integer(NumberPrefix::None, NumberSuffix::F32, "69".to_string())),
+            ("69.0", TokenKind::Float(NumberSuffix::None, "69.0".to_string())),
+            ("69.0f32", TokenKind::Float(NumberSuffix::F32, "69.0".to_string())),
+            ("69.0f64", TokenKind::Float(NumberSuffix::F64, "69.0".to_string())),
+
+            ("\"string\"", TokenKind::String("string".to_string())),
+            ("'c'", TokenKind::Char('c')),
+            
+            ("{", TokenKind::LeftCurly),
+            ("}", TokenKind::RightCurly),
+            ("[", TokenKind::LeftSquare),
+            ("]", TokenKind::RightSquare),
+            ("(", TokenKind::LeftParen),
+            (")", TokenKind::RightParen),
+            
+            ("let", TokenKind::Let),
+            ("mut", TokenKind::Mut),
+            ("fun", TokenKind::Fun),
+            ("return", TokenKind::Return),
+            ("bail", TokenKind::Bail),
+            ("if", TokenKind::If),
+            ("else", TokenKind::Else),
+            ("loop", TokenKind::Loop),
+            ("while", TokenKind::While),
+            ("for", TokenKind::For),
+            ("in", TokenKind::In),
+            ("break", TokenKind::Break),
+            ("continue", TokenKind::Continue),
+            ("match", TokenKind::Match),
+            ("import", TokenKind::Import),
+            ("export", TokenKind::Export),
+            ("true", TokenKind::Bool(true)),
+            ("false", TokenKind::Bool(false)),
+            ("struct", TokenKind::Struct),
+            ("enum", TokenKind::Enum),
+
+            ("+", TokenKind::Add),
+            ("-", TokenKind::Subtract),
+            ("*", TokenKind::Multiply),
+            ("/", TokenKind::Divide),
+            ("%", TokenKind::Modulo),
+
+            ("&&", TokenKind::And),
+            ("!&", TokenKind::Nand),
+            ("||", TokenKind::Or),
+            ("!|", TokenKind::Nor),
+            ("!", TokenKind::Not),
+
+            ("=", TokenKind::Assign),
+            ("+=", TokenKind::AddAssign),
+            ("-=", TokenKind::SubtractAssign),
+            ("*=", TokenKind::MultiplyAssign),
+            ("/=", TokenKind::DivideAssign),
+
+            ("==", TokenKind::Equals),
+            ("!=", TokenKind::NotEquals),
+            ("<", TokenKind::LessThan),
+            ("<=", TokenKind::LessThanOrEqual),
+            (">", TokenKind::GreaterThan),
+            (">=", TokenKind::GreaterThanOrEqual),
+
+            ("<-", TokenKind::LeftArrow),
+            ("->", TokenKind::RightArrow),
+        ];
+
+        for (code, expected) in tokens.iter() {
+            let lexer = Lexer::new(code);
+            let tokens = lexer.lex().tokens;
+
+            assert_eq!(
+                tokens.len(),
+                1,
+                "failed parsing {expected:?}, got left out tokens: {tokens:?}"
+            );
+
+            assert_eq!(
+                &tokens[0].0, expected,
+                "failed parsing {expected:?}, got {:?} instead",
+                &tokens[0].0
+            );
+        }
     }
 }
