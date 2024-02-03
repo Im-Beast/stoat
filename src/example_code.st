@@ -21,17 +21,25 @@ export mod nested_module {
 
 let char = ' ';
 
-let explicit_i32: i32 = 5;
-let implici_i32 = 5i32;
 let mut unknown_i = 3;
 let unknown_f = 3.14159;
+
 let implicit_bool = false;
+let explicit_bool: bool = true;
+
+let explicit_i32: i32 = 5;
+let implici_i32 = 5i32;
+
+let implicit_f32 = 5f32;
+let implicit_f64 = 32f64;
 let explicit_f32: f32 = 5f32;
 let explicit_f64: f64 = 32f64;
 
-let negative_i32: i32 = -5;
-let test = !false;
+let implicit_str = "dog";
+let explicit_str: str = "dog";
 
+let implicit_char = 'c';
+let explicit_char: char = 'c';
 
 let implicit_tuple = (1i32, 2i32, 3i32);
 let implicit_tuple = (1+2, 3i32, "dog");
@@ -43,6 +51,17 @@ let explicit_arr: i32[3] = [1, 2, 3];
 
 let implicit_vec = [|1i32, 2i32|];
 let explicit_vec: i32[] = [|1, 2|];
+
+let cat = "cat";
+
+let implicit_ref = &cat;
+let explicit_ref: &str = &cat;
+
+let implicit_mut_ref = &mut cat;
+let explicit_mut_ref: &mut str = &mut cat;
+
+let negative_i32: i32 = -5;
+let test = !false;
 
 "dog";
 
@@ -92,8 +111,8 @@ let dog = Dog { woof: false };
 dog.woof = true;
 
 enum Animal {
-  Dog(AnimalID, string),
-  Cat(AnimalID, string)
+  Dog(AnimalID, str),
+  Cat(AnimalID, str)
 }
 
 enum AnimalID {

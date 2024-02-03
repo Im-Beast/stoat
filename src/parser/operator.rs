@@ -23,6 +23,9 @@ pub enum Operator {
     LessThanOrEqual,
     GreaterThan,
     GreaterThanOrEqual,
+
+    Reference,
+    MutableReference,
 }
 
 impl TryFrom<&Token> for Operator {

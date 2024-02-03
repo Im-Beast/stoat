@@ -385,16 +385,31 @@ impl<'src> Parser<'src> {
         // -operand
 
         let operator = match self.peek()?.0 {
+            // Logical negation of expression
             TokenKind::Not => {
                 self.consume_any();
                 Operator::Not
             }
+
+            // Negative expression
             TokenKind::Subtract => {
                 self.consume_any();
                 Operator::Subtract
             }
+
+            // Reference or MutableReference
+            TokenKind::Ampersand => {
+                self.consume_any();
+                if let TokenKind::Mut = self.peek()?.0 {
+                    self.consume_any();
+                    Operator::MutableReference
+                } else {
+                    Operator::Reference
+                }
+            }
+
+            // Either a contained expression or a tuple
             TokenKind::LeftParen => {
-                // Either a contained expression or a tuple
                 let operand = self.parse_operand(context)?;
 
                 let operand = match operand {
@@ -787,7 +802,7 @@ impl<'src> Parser<'src> {
         // - f32, f64
         // - bool
         // - char
-        // - string
+        // - str
         // - type[]             (vec of type)
         // - type[size]         (array of type)
         // - &type              (ref to type)
@@ -858,7 +873,7 @@ impl<'src> Parser<'src> {
 
             "bool" => Type::Bool,
             "char" => Type::Char,
-            "string" => Type::String,
+            "str" => Type::String,
 
             identifier => {
                 let interned_ident = self.interner.intern(&identifier);
@@ -870,6 +885,12 @@ impl<'src> Parser<'src> {
     }
 
     pub fn parse_reference_type(&mut self) -> Option<Type> {
+        // Possible types:
+        // &type
+        // &mut type
+
+        consume!(self, TokenKind::Ampersand);
+
         let value_type = if let TokenKind::Mut = self.peek()?.0 {
             consume!(self, TokenKind::Mut); // mut
             let value_type = self.parse_type()?;
