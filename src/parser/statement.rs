@@ -1,4 +1,4 @@
-use crate::{expression::Expression, value_type::Type};
+use crate::{Block, Expression, Type};
 use shared::interner::InternedString;
 
 #[derive(Debug)]
@@ -8,6 +8,12 @@ pub enum Statement {
     VariableDeclaration(VariableDeclaration),
     StructDeclaration(StructDeclaration),
     EnumDeclaration(EnumDeclaration),
+
+    Loop(Loop),
+    ForLoop(ForLoop),
+    WhileLoop(WhileLoop),
+    Break,
+    Continue,
 }
 
 #[derive(Debug)]
@@ -47,4 +53,23 @@ pub struct EnumDeclarationVariant {
 pub struct EnumDeclaration {
     pub identifier: InternedString,
     pub variants: Box<[EnumDeclarationVariant]>,
+}
+
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct Loop {
+    pub block: Block,
+}
+
+#[derive(Debug)]
+pub struct ForLoop {
+    pub identifier: InternedString,
+    pub iterable: Expression,
+    pub block: Block,
+}
+
+#[derive(Debug)]
+pub struct WhileLoop {
+    pub condition: Expression,
+    pub block: Block,
 }

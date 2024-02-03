@@ -11,6 +11,16 @@ pub enum Operator {
     Divide,
     Modulo,
 
+    Assign,
+    AddAssign,
+    SubtractAssign,
+    MultiplyAssign,
+    DivideAssign,
+    ModuloAssign,
+
+    InclusiveRange,
+    ExclusiveRange,
+
     And,
     Nand,
     Or,
@@ -47,6 +57,13 @@ impl TryFrom<&TokenKind> for Operator {
             TokenKind::Divide => Operator::Divide,
             TokenKind::Modulo => Operator::Modulo,
 
+            TokenKind::Assign => Operator::Assign,
+            TokenKind::AddAssign => Operator::AddAssign,
+            TokenKind::SubtractAssign => Operator::SubtractAssign,
+            TokenKind::MultiplyAssign => Operator::MultiplyAssign,
+            TokenKind::DivideAssign => Operator::DivideAssign,
+            TokenKind::ModuloAssign => Operator::ModuloAssign,
+
             TokenKind::And => Operator::And,
             TokenKind::Nand => Operator::Nand,
             TokenKind::Or => Operator::Or,
@@ -59,6 +76,9 @@ impl TryFrom<&TokenKind> for Operator {
             TokenKind::LessThanOrEqual => Operator::LessThanOrEqual,
             TokenKind::GreaterThan => Operator::GreaterThan,
             TokenKind::GreaterThanOrEqual => Operator::GreaterThanOrEqual,
+
+            TokenKind::DoubleDot => Operator::ExclusiveRange,
+            TokenKind::DoubleDotEquals => Operator::ExclusiveRange,
 
             token => bail!("Cannot convert {token:?} into an operator"),
         };

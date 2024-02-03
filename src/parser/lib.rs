@@ -32,8 +32,8 @@ use crate::{
         StructInitializationField, UnaryOperation,
     },
     statement::{
-        EnumDeclaration, EnumDeclarationField, EnumDeclarationVariant, StructDeclaration,
-        StructDeclarationField,
+        EnumDeclaration, EnumDeclarationField, EnumDeclarationVariant, ForLoop, Loop,
+        StructDeclaration, StructDeclarationField, WhileLoop,
     },
 };
 
@@ -245,7 +245,7 @@ impl<'src> Parser<'src> {
                 match context {
                     ExpressionContext::NoSemicolon => {}
                     ExpressionContext::Default => self.unexpected_eof("Operator or Semicolon"),
-                    ExpressionContext::IfCondition => self.unexpected_eof("Operator or LeftCurly"),
+                    ExpressionContext::Condition => self.unexpected_eof("Operator or LeftCurly"),
                     ExpressionContext::Function | ExpressionContext::Block => {
                         self.unexpected_eof("Operator, Semicolon or RightCurly")
                     }
@@ -285,7 +285,7 @@ impl<'src> Parser<'src> {
             // No semicolon
             ExpressionContext::NoSemicolon => {}
             // Left curly bracket
-            ExpressionContext::IfCondition => {
+            ExpressionContext::Condition => {
                 // ! When we parse if conditions, we don't consume the left bracket
                 // ! Because parse_block_expression does it for us
                 peek_from!(self, [TokenKind::LeftCurly]);
@@ -487,8 +487,8 @@ impl<'src> Parser<'src> {
 
         consume!(self, TokenKind::If);
 
-        let condition = self.parse_expression(&ExpressionContext::IfCondition)?;
-        let then_block = self.parse_block_expression(&ExpressionContext::Block)?;
+        let condition = self.parse_expression(&ExpressionContext::Condition)?;
+        let then_block = self.parse_block(&ExpressionContext::Block)?;
         let else_block = if matches!(self.peek(), Some(Token(TokenKind::Else, _))) {
             consume!(self, TokenKind::Else);
 
@@ -499,7 +499,7 @@ impl<'src> Parser<'src> {
                     expression
                 }
                 _ => {
-                    let block = self.parse_block_expression(&ExpressionContext::Block)?;
+                    let block = self.parse_block(&ExpressionContext::Block)?;
                     Expression::Block(block)
                 }
             }))
@@ -514,7 +514,7 @@ impl<'src> Parser<'src> {
         }))
     }
 
-    pub fn parse_block_expression(&mut self, context: &ExpressionContext) -> Option<Block> {
+    pub fn parse_block(&mut self, context: &ExpressionContext) -> Option<Block> {
         // { stmt[]; expr? };
 
         consume!(self, TokenKind::LeftCurly);
@@ -551,7 +551,7 @@ impl<'src> Parser<'src> {
     }
 
     pub fn parse_block_statement(&mut self) -> Option<Statement> {
-        let block = self.parse_block_expression(&ExpressionContext::Block)?;
+        let block = self.parse_block(&ExpressionContext::Block)?;
         Some(Statement::Expression(Expression::Block(block)))
     }
 
@@ -940,15 +940,15 @@ impl<'src> Parser<'src> {
             _ => unreachable!(),
         };
 
-        let token = consume_from!(self, [TokenKind::Equals, TokenKind::Colon]);
+        let token = consume_from!(self, [TokenKind::Assign, TokenKind::Colon]);
         let (value_type, value) = match &token.0 {
-            TokenKind::Equals => (
+            TokenKind::Assign => (
                 Type::Unknown,
                 self.parse_expression(&ExpressionContext::Default)?,
             ),
             TokenKind::Colon => {
                 let value_type = self.parse_type()?;
-                consume!(self, TokenKind::Equals);
+                consume!(self, TokenKind::Assign);
                 let value = self.parse_expression(&ExpressionContext::Default)?;
                 (value_type, value)
             }
@@ -1013,7 +1013,7 @@ impl<'src> Parser<'src> {
         };
 
         // { stmt[]; expr? }
-        let block = self.parse_block_expression(&ExpressionContext::Function)?;
+        let block = self.parse_block(&ExpressionContext::Function)?;
 
         Some(Expression::Function(Function {
             identifier: interned_ident,
@@ -1175,7 +1175,7 @@ impl<'src> Parser<'src> {
                 None
             };
 
-            let discriminant = if matches!(self.peek()?.0, TokenKind::Equals) {
+            let discriminant = if matches!(self.peek()?.0, TokenKind::Assign) {
                 self.consume_any();
                 self.parse_value_expression()
             } else {
@@ -1200,6 +1200,55 @@ impl<'src> Parser<'src> {
         }))
     }
 
+    pub fn parse_loop_statement(&mut self) -> Option<Statement> {
+        consume!(self, TokenKind::Loop);
+        let block = self.parse_block(&ExpressionContext::Block)?;
+        Some(Statement::Loop(Loop { block }))
+    }
+
+    pub fn parse_while_statement(&mut self) -> Option<Statement> {
+        // Possible statements:
+        // while expr { stmt[]; }
+
+        consume!(self, TokenKind::While);
+        let condition = self.parse_expression(&ExpressionContext::Condition)?;
+        let block = self.parse_block(&ExpressionContext::NoSemicolon)?;
+        Some(Statement::WhileLoop(WhileLoop { condition, block }))
+    }
+
+    pub fn parse_for_statement(&mut self) -> Option<Statement> {
+        // Possible statements:
+        // TODO: Replace ident with pattern later on
+        // for ident in expr { stmt[]; }
+
+        consume!(self, TokenKind::For);
+
+        let identifier = consume!(self, TokenKind::Identifier(identifier) => identifier);
+        let interned_ident = self.interner.intern(&identifier);
+
+        consume!(self, TokenKind::In);
+
+        let iterable = self.parse_expression(&ExpressionContext::Condition)?;
+
+        let block = self.parse_block(&ExpressionContext::NoSemicolon)?;
+
+        Some(Statement::ForLoop(ForLoop {
+            identifier: interned_ident,
+            iterable,
+            block,
+        }))
+    }
+
+    pub fn parse_break_statement(&mut self) -> Option<Statement> {
+        consume!(self, TokenKind::Break);
+        Some(Statement::Break)
+    }
+
+    pub fn parse_continue_statement(&mut self) -> Option<Statement> {
+        consume!(self, TokenKind::Continue);
+        Some(Statement::Continue)
+    }
+
     pub fn parse_statement(&mut self, context: &ExpressionContext) -> Option<Statement> {
         let next = self.peek()?;
 
@@ -1215,6 +1264,12 @@ impl<'src> Parser<'src> {
             TokenKind::Return => self.parse_return_statement(context)?,
 
             TokenKind::Let => self.parse_variable_declaration()?,
+
+            TokenKind::Loop => self.parse_loop_statement()?,
+            TokenKind::While => self.parse_while_statement()?,
+            TokenKind::For => self.parse_for_statement()?,
+            TokenKind::Break => self.parse_break_statement()?,
+            TokenKind::Continue => self.parse_continue_statement()?,
 
             TokenKind::If => self.parse_if_statement()?,
             TokenKind::Fun => self.parse_function_statement()?,

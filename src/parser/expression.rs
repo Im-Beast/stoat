@@ -11,7 +11,7 @@ pub enum ExpressionContext {
     Default,
     // Expression without semicolon afterwards
     NoSemicolon,
-    IfCondition,
+    Condition,
     // Expression without semicolon afterwards,
     // lack of it signals implicit return
     Block,
