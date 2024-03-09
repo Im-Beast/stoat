@@ -1,11 +1,12 @@
 pub mod array;
 pub mod consts;
 
-use array::HeapArray;
-use consts::{Const32, Const64};
-use std::mem;
+mod const32;
+mod const64;
 
-use self::consts::Const;
+use array::HeapArray;
+use consts::{Const, Const32, Const64};
+use std::mem;
 
 pub type RelativePtr = u32;
 pub const RELATIVE_POINTER_NULL: RelativePtr = RelativePtr::MAX;
