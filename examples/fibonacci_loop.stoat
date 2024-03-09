@@ -1,7 +1,7 @@
 fun fibonacciLoop(n: i64) -> i64 {
-  let mut num = 0;;
-  let mut num2 = 1;;
-  let mut temp = 0;;
+  let mut num = 0;
+  let mut num2 = 1;
+  let mut temp = 0;
 
   for _ in 0..n {
     temp = num;
