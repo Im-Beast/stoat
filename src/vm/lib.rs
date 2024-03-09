@@ -3,6 +3,9 @@ use std::borrow::Cow;
 use miette::{bail, Result};
 use shared::interner::{InternedString, Interner};
 
+pub mod heap;
+use heap::Heap;
+
 pub mod stack;
 use stack::Stack;
 
@@ -43,27 +46,31 @@ macro_rules! binary_operation {
 }
 
 #[derive(Debug)]
-struct VM<'stack> {
+struct VM<'heap, 'stack> {
     interner: Interner,
     labels: Vec<usize>, // InternedString -> InstructionPointer
 
     call_stack: Vec<CallFrame>,
 
     program: Program,
-    stack: Stack<'stack, Value>,
     ip: usize,
+
+    heap: Heap<'heap>,
+    stack: Stack<'stack, Value>,
 }
 
-impl<'stack> VM<'stack> {
+impl<'heap, 'stack> VM<'heap, 'stack> {
     pub fn new(program: Program, interner: Interner) -> Self {
         Self {
             interner,
             labels: Vec::new(),
 
+            heap: Heap::default(),
+            stack: Stack::default(),
+
             call_stack: Vec::from([CallFrame::new(program.len())]),
 
             program,
-            stack: Stack::default(),
             ip: 0,
         }
     }
@@ -78,8 +85,8 @@ impl<'stack> VM<'stack> {
             self.ip += 1;
 
             match instruction {
-                Instruction::Push(value) => self.stack.push(value.to_owned()),
-                Instruction::Pop => {
+                Instruction::PushStack(value) => self.stack.push(value.clone()),
+                Instruction::PopStack => {
                     self.stack.pop();
                 }
 
@@ -246,7 +253,6 @@ impl<'stack> VM<'stack> {
 mod tests {
     use crate::*;
     use shared::interner::Interner;
-
     #[test]
     fn fibonacci() {
         let mut interner = Interner::default();
@@ -264,61 +270,61 @@ mod tests {
         let program = Program::new(vec![
             // fibonacci sequence till amount–th number
             // a = 0
-            Instruction::Push(Value::I64(0)),
-            Instruction::Push(Value::Pointer(a)),
+            Instruction::PushStack(Value::I64(0)),
+            Instruction::PushStack(Value::Pointer(a)),
             Instruction::DeclareVariable,
             // b = 1
-            Instruction::Push(Value::I64(1)),
-            Instruction::Push(Value::Pointer(b)),
+            Instruction::PushStack(Value::I64(1)),
+            Instruction::PushStack(Value::Pointer(b)),
             Instruction::DeclareVariable,
             // i = 0
-            Instruction::Push(Value::I64(0)),
-            Instruction::Push(Value::Pointer(i)),
+            Instruction::PushStack(Value::I64(0)),
+            Instruction::PushStack(Value::Pointer(i)),
             Instruction::DeclareVariable,
             // temp = 0
-            Instruction::Push(Value::I64(0)),
-            Instruction::Push(Value::Pointer(temp)),
+            Instruction::PushStack(Value::I64(0)),
+            Instruction::PushStack(Value::Pointer(temp)),
             Instruction::DeclareVariable,
             // loop:
             // if i == amount jump to end
-            Instruction::Push(Value::Pointer(i)),
+            Instruction::PushStack(Value::Pointer(i)),
             Instruction::Ref,
-            Instruction::Push(Value::I64(amount)),
+            Instruction::PushStack(Value::I64(amount)),
             Instruction::Compare,
-            Instruction::Push(Value::I8(0)),
-            Instruction::Push(Value::Pointer(end)),
+            Instruction::PushStack(Value::I8(0)),
+            Instruction::PushStack(Value::Pointer(end)),
             Instruction::JumpIfEqual,
             // i += 1
-            Instruction::Push(Value::Pointer(i)),
+            Instruction::PushStack(Value::Pointer(i)),
             Instruction::Ref,
-            Instruction::Push(Value::I64(1)),
+            Instruction::PushStack(Value::I64(1)),
             Instruction::Add,
-            Instruction::Push(Value::Pointer(i)),
+            Instruction::PushStack(Value::Pointer(i)),
             Instruction::Assign,
             // temp = a
-            Instruction::Push(Value::Pointer(a)),
+            Instruction::PushStack(Value::Pointer(a)),
             Instruction::Clone,
-            Instruction::Push(Value::Pointer(temp)),
+            Instruction::PushStack(Value::Pointer(temp)),
             Instruction::Assign,
             // a = b
-            Instruction::Push(Value::Pointer(b)),
+            Instruction::PushStack(Value::Pointer(b)),
             Instruction::Clone,
-            Instruction::Push(Value::Pointer(a)),
+            Instruction::PushStack(Value::Pointer(a)),
             Instruction::Assign,
             // b = b + temp
-            Instruction::Push(Value::Pointer(b)),
+            Instruction::PushStack(Value::Pointer(b)),
             Instruction::Ref,
-            Instruction::Push(Value::Pointer(temp)),
+            Instruction::PushStack(Value::Pointer(temp)),
             Instruction::Ref,
             Instruction::Add,
-            Instruction::Push(Value::Pointer(b)),
+            Instruction::PushStack(Value::Pointer(b)),
             Instruction::Assign,
             // goto loop
-            Instruction::Push(Value::Pointer(fib)),
+            Instruction::PushStack(Value::Pointer(fib)),
             Instruction::Jump,
             // end:
             // &b
-            Instruction::Push(Value::Pointer(b)),
+            Instruction::PushStack(Value::Pointer(b)),
             Instruction::Ref,
         ]);
 
@@ -350,31 +356,31 @@ mod tests {
             // print(c)
 
             // a = 5
-            Instruction::Push(Value::I64(5)),
-            Instruction::Push(Value::Pointer(a)),
+            Instruction::PushStack(Value::I64(5)),
+            Instruction::PushStack(Value::Pointer(a)),
             Instruction::DeclareVariable,
             // b = 3
-            Instruction::Push(Value::I64(3)),
-            Instruction::Push(Value::Pointer(b)),
+            Instruction::PushStack(Value::I64(3)),
+            Instruction::PushStack(Value::Pointer(b)),
             Instruction::DeclareVariable,
             // c = multiply(a, b)
-            Instruction::Push(Value::Pointer(a)),
+            Instruction::PushStack(Value::Pointer(a)),
             Instruction::Clone,
-            Instruction::Push(Value::Pointer(b)),
+            Instruction::PushStack(Value::Pointer(b)),
             Instruction::Ref,
-            Instruction::Push(Value::Pointer(multiply)), // label
+            Instruction::PushStack(Value::Pointer(multiply)), // label
             Instruction::Call,
-            Instruction::Push(Value::Pointer(c)),
+            Instruction::PushStack(Value::Pointer(c)),
             Instruction::DeclareVariable,
             // c = square(c)
-            Instruction::Push(Value::Pointer(c)),
+            Instruction::PushStack(Value::Pointer(c)),
             Instruction::Ref,
-            Instruction::Push(Value::Pointer(square)), // label
+            Instruction::PushStack(Value::Pointer(square)), // label
             Instruction::Call,
-            Instruction::Push(Value::Pointer(c)),
+            Instruction::PushStack(Value::Pointer(c)),
             Instruction::Assign,
             // &c
-            Instruction::Push(Value::Pointer(c)),
+            Instruction::PushStack(Value::Pointer(c)),
             Instruction::Ref,
             // break out of main
             Instruction::Return,

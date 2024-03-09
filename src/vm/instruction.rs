@@ -2,8 +2,8 @@ use super::value::Value;
 
 #[derive(Debug, Clone)]
 pub enum Instruction {
-    Push(Value),
-    Pop,
+    PushStack(Value),
+    PopStack,
 
     Ref,
     Clone,

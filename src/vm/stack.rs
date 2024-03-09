@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 #[derive(Debug, Clone)]
+#[repr(transparent)]
 pub struct Stack<'a, T: Clone> {
     stack: Vec<Cow<'a, T>>,
 }

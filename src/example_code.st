@@ -89,7 +89,6 @@ fun mul(a: i32, b: i32) -> i32 {
 }
 
 
-// this crashes
 if !("ahu" != 2) {
   print("yep");
 }
