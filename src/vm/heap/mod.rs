@@ -44,40 +44,33 @@ pub struct Heap<'a> {
 
 impl Heap<'_> {
     pub fn gc(&mut self) {
-        self.c32.retain(|ptr| unsafe {
-            !relative_ptr!(bytes; *const Const32, self.u8, *ptr).is_null()
-        });
-        self.c64.retain(|ptr| unsafe {
-            !relative_ptr!(bytes; *const Const64, self.u8, *ptr).is_null()
-        });
-        self.c32arrays.retain(|arr| unsafe {
-            !relative_ptr!(bytes; *const HeapArray<4, Const32>, self.u8, arr.ptr).is_null()
-        });
-        self.c64arrays.retain(|arr| unsafe {
-            !relative_ptr!(bytes; *const HeapArray<8, Const64>, self.u8, arr.ptr).is_null()
-        });
-
-        // Sort, so that pointers are more likely to be close to each other
-        self.c32.sort();
-        self.c64.sort();
-        self.c32arrays.sort_by(|a, b| a.ptr.cmp(&b.ptr));
-        self.c64arrays.sort_by(|a, b| a.ptr.cmp(&b.ptr));
-
         let c32_with_len = self
             .c32
             .iter_mut()
+            .filter(|ptr| unsafe {
+                !relative_ptr!(bytes; *const Const32, self.u8, **ptr).is_null()
+            })
             .map(|ptr| (ptr, mem::size_of::<Const32>()));
         let c64_with_len = self
             .c64
             .iter_mut()
+            .filter(|ptr| unsafe {
+                !relative_ptr!(bytes; *const Const64, self.u8, **ptr).is_null()
+            })
             .map(|ptr| (ptr, mem::size_of::<Const64>()));
         let c32arrays_with_len = self
             .c32arrays
             .iter_mut()
+            .filter(|arr| unsafe {
+                !relative_ptr!(bytes; *const Const32, self.u8, arr.ptr).is_null()
+            })
             .map(|arr| (&mut arr.ptr, arr.len as usize * mem::size_of::<Const32>()));
         let c64arrays_with_len = self
             .c64arrays
             .iter_mut()
+            .filter(|arr| unsafe {
+                !relative_ptr!(bytes; *const Const64, self.u8, arr.ptr).is_null()
+            })
             .map(|arr| (&mut arr.ptr, arr.len as usize * mem::size_of::<Const64>()));
 
         let mut new_heap = Vec::new();
@@ -199,20 +192,26 @@ mod tests {
         let mut heap = Heap::default();
         let a = heap.add_c32(69u32.into());
         let b = heap.add_c32(420u32.into());
+        let c = heap.add_c32(1337u32.into());
         {
             let a: u32 = heap.get_c32(a).unwrap().into();
             let b: u32 = heap.get_c32(b).unwrap().into();
+            let c: u32 = heap.get_c32(c).unwrap().into();
             assert_eq!(a, 69);
             assert_eq!(b, 420);
+            assert_eq!(c, 1337);
         }
 
         heap.set_c32(a, (2_147_483_647u32).into());
         heap.set_c32(b, (2_147_483_648u32).into());
+        heap.set_c32(c, (10u32).into());
         {
             let a: u32 = heap.get_c32(a).unwrap().into();
             let b: i32 = heap.get_c32(b).unwrap().into();
+            let c: i32 = heap.get_c32(c).unwrap().into();
             assert_eq!(a, 2_147_483_647);
             assert_eq!(b, -2_147_483_648);
+            assert_eq!(c, 10);
         }
 
         heap.c32[b] = RELATIVE_POINTER_NULL;
@@ -221,10 +220,12 @@ mod tests {
         assert!(heap.u8.len() < before_gc);
 
         {
-            assert_eq!(heap.c32.len(), 1);
             let a: u32 = heap.get_c32(a).unwrap().into();
+            let b = heap.get_c32(b);
+            let c: i32 = heap.get_c32(c).unwrap().into();
             assert_eq!(a, 2_147_483_647);
-            assert_eq!(heap.get_c32(b), None);
+            assert_eq!(b, None);
+            assert_eq!(c, 10);
         }
     }
 
@@ -233,20 +234,26 @@ mod tests {
         let mut heap = Heap::default();
         let a = heap.add_c64(69u64.into());
         let b = heap.add_c64(420u64.into());
+        let c = heap.add_c64(1337u64.into());
         {
             let a: u64 = heap.get_c64(a).unwrap().into();
             let b: u64 = heap.get_c64(b).unwrap().into();
+            let c: u64 = heap.get_c64(c).unwrap().into();
             assert_eq!(a, 69);
             assert_eq!(b, 420);
+            assert_eq!(c, 1337);
         }
 
         heap.set_c64(a, (9_223_372_036_854_775_807u64).into());
         heap.set_c64(b, (9_223_372_036_854_775_808u64).into());
+        heap.set_c64(c, (10u64).into());
         {
             let a: u64 = heap.get_c64(a).unwrap().into();
             let b: i64 = heap.get_c64(b).unwrap().into();
+            let c: i64 = heap.get_c64(c).unwrap().into();
             assert_eq!(a, 9_223_372_036_854_775_807);
             assert_eq!(b, -9_223_372_036_854_775_808);
+            assert_eq!(c, 10);
         }
 
         heap.c64[b] = RELATIVE_POINTER_NULL;
@@ -255,10 +262,12 @@ mod tests {
         assert!(heap.u8.len() < before_gc);
 
         {
-            assert_eq!(heap.c64.len(), 1);
             let a: u64 = heap.get_c64(a).unwrap().into();
+            let b = heap.get_c64(b);
+            let c: i64 = heap.get_c64(c).unwrap().into();
             assert_eq!(a, 9_223_372_036_854_775_807);
-            assert_eq!(heap.get_c64(b), None);
+            assert_eq!(b, None);
+            assert_eq!(c, 10);
         }
     }
 
