@@ -102,8 +102,19 @@ impl Heap<'_> {
     }
 
     pub fn add_c32(&mut self, value: Const32) -> usize {
-        let index = self.c32.len();
+        // If an empty pointer field is present, we can reuse it
+        let null_index = self
+            .c32
+            .iter()
+            .position(|ptr| ptr == &RELATIVE_POINTER_NULL);
         self.u8.extend(value.0);
+
+        if let Some(index) = null_index {
+            self.c32[index] = (index * mem::size_of::<Const32>()) as u32;
+            return index;
+        }
+
+        let index = self.c32.len();
         self.c32.push((index * mem::size_of::<Const32>()) as u32);
         index
     }
@@ -125,8 +136,19 @@ impl Heap<'_> {
     }
 
     pub fn add_c64(&mut self, value: Const64) -> usize {
-        let index = self.c64.len();
+        // If an empty pointer field is present, we can reuse it
+        let null_index = self
+            .c64
+            .iter()
+            .position(|ptr| ptr == &RELATIVE_POINTER_NULL);
         self.u8.extend(value.0);
+
+        if let Some(index) = null_index {
+            self.c64[index] = (index * mem::size_of::<Const64>()) as u32;
+            return index;
+        }
+
+        let index = self.c64.len();
         self.c64.push((index * mem::size_of::<Const64>()) as u32);
         index
     }
@@ -146,9 +168,18 @@ impl Heap<'_> {
     }
 
     pub fn add_c32array(&mut self, array: &[Const32]) -> usize {
-        let index = self.c32arrays.len();
+        let null_index = self.c32arrays.iter().position(|arr| unsafe {
+            relative_ptr!(bytes; *const Const32, self.u8, arr.ptr).is_null()
+        });
         let ptr = self.u8.len();
         self.u8.extend(array.iter().flat_map(|value| value.0));
+
+        if let Some(index) = null_index {
+            self.c32arrays[index] = HeapArray::new(ptr as u32, array.len() as u32);
+            return index;
+        }
+
+        let index = self.c32arrays.len();
         self.c32arrays
             .push(HeapArray::new(ptr as u32, array.len() as u32));
         index
@@ -164,9 +195,18 @@ impl Heap<'_> {
     }
 
     pub fn add_c64array(&mut self, array: &[Const64]) -> usize {
-        let index = self.c64arrays.len();
+        let null_index = self.c64arrays.iter().position(|arr| unsafe {
+            relative_ptr!(bytes; *const Const64, self.u8, arr.ptr).is_null()
+        });
         let ptr = self.u8.len();
         self.u8.extend(array.iter().flat_map(|value| value.0));
+
+        if let Some(index) = null_index {
+            self.c64arrays[index] = HeapArray::new(ptr as u32, array.len() as u32);
+            return index;
+        }
+
+        let index = self.c64arrays.len();
         self.c64arrays
             .push(HeapArray::new(ptr as u32, array.len() as u32));
         index
